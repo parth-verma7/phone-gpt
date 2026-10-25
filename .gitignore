@@ -1,0 +1,34 @@
+# Installed dependencies and local Expo state
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Native build outputs and machine-specific configuration
+**/build/
+**/.gradle/
+**/.cxx/
+**/.externalNativeBuild/
+android/local.properties
+android/app/src/main/assets/ggml-hexagon/
+*.apk
+*.aab
+*.jsbundle
+*.hprof
+
+# Credentials, signing material and downloaded model weights
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.pem
+*.key
+*.gguf
+*.safetensors
+
+# Editor and OS files
+.idea/
+*.iml
+.DS_Store
+*.log

@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "strict": true, "jsx": "react-jsx", "resolveJsonModule": true },
+  "extends": "expo/tsconfig.base"
+}

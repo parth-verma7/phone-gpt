@@ -32,3 +32,4 @@ android/app/src/main/assets/ggml-hexagon/
 *.iml
 .DS_Store
 *.log
+Gemini_Generated_Image*.png

@@ -1,5 +1,6 @@
 type HistoryChat = {
   id: string;
+  origin?: 'dev' | 'production';
   createdAt?: number;
   updatedAt?: number;
   messages: { id: string; role: string; content: string; attachments?: { name: string }[] }[];
@@ -26,7 +27,7 @@ export function chatHistoryLabels(chat: HistoryChat) {
   const timestamp = validTimestamp(chat.createdAt);
   const date = timestamp ? new Date(timestamp) : null;
   return {
-    title,
+    title: chat.origin === 'dev' ? `Dev - ${title}` : title,
     date: date?.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) ?? '—',
     time: date?.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) ?? '—',
   };

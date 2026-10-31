@@ -2,6 +2,8 @@ package com.phonegpt.app
 
 import android.app.DownloadManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Environment
 import com.facebook.react.bridge.Arguments
@@ -40,16 +42,34 @@ class PhoneGptDownloadsModule(private val context: ReactApplicationContext) :
     val progress: Double = 0.0,
     val uri: String? = null,
     val error: String? = null,
+    val pauseReason: String? = null,
   ) {
     fun toMap(): WritableMap = Arguments.createMap().apply {
       putString("status", status)
       putDouble("progress", progress)
+      putBoolean("canPause", false)
       uri?.let { putString("uri", it) }
       error?.let { putString("error", it) }
+      pauseReason?.let { putString("pauseReason", it) }
     }
   }
 
   override fun getName() = "PhoneGptDownloads"
+
+  @ReactMethod
+  fun getNetworkStatus(promise: Promise) {
+    try {
+      val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+      val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+      promise.resolve(Arguments.createMap().apply {
+        putBoolean("online", capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true)
+        putBoolean("metered", connectivity.isActiveNetworkMetered)
+      })
+    } catch (error: Exception) {
+      promise.reject("E_NETWORK_STATUS", "Could not check the connection", error)
+    }
+  }
+
 
   private fun execute(promise: Promise, action: () -> Any?) {
     worker.execute {
@@ -134,7 +154,7 @@ class PhoneGptDownloadsModule(private val context: ReactApplicationContext) :
       return when (status) {
         DownloadManager.STATUS_PENDING -> State("pending", progress)
         DownloadManager.STATUS_RUNNING -> State("running", progress)
-        DownloadManager.STATUS_PAUSED -> State("paused", progress)
+        DownloadManager.STATUS_PAUSED -> State("paused", progress, pauseReason = if (!ModelTransfers.online(context)) "network" else "retry")
         DownloadManager.STATUS_SUCCESSFUL -> {
           if (file.isFile && file.length() > 0 && (total <= 0 || file.length() == total)) {
             State("completed", 1.0, Uri.fromFile(file).toString())
@@ -176,40 +196,40 @@ class PhoneGptDownloadsModule(private val context: ReactApplicationContext) :
     require((uri.scheme == "https" || uri.scheme == "http") && !uri.host.isNullOrBlank()) {
       "Download URL must be HTTP or HTTPS"
     }
+    if (ModelTransfers.read(context, modelId) != null) return@execute ModelTransfers.enqueue(context, modelId, url, fileName)
     val existing = read(modelId)?.let { recover(it) }
     if (existing != null) {
       val current = state(existing)
       if (current.status != "failed") return@execute current.toMap()
     }
-    // A second model must never overwrite another model's active or completed file.
     for (key in preferences.all.keys) {
-      if (key != modelId && read(key)?.fileName == fileName) {
-        throw IllegalArgumentException("fileName is already assigned to another model")
-      }
+      if (key != modelId && read(key)?.fileName == fileName) throw IllegalArgumentException("Filename belongs to another model")
     }
     if (existing != null) remove(existing)
-    // Orphans are never considered installed; remove them before retrying the destination.
     if (target.exists() && !target.delete()) throw IOException("Could not remove stale model file")
-    val request = DownloadManager.Request(uri)
-      .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "models/$fileName")
-      .setAllowedNetworkTypes(DownloadManager.Request.NETWORK_MOBILE or DownloadManager.Request.NETWORK_WIFI)
-      .setAllowedOverMetered(true)
-      .setAllowedOverRoaming(true)
-      .setTitle(modelId)
-      .setDescription("PhoneGPT model download")
-      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-    val journal = Record(modelId, url, fileName, 0)
-    save(journal)
-    val id = manager.enqueue(request)
-    val record = journal.copy(id = id)
-    // If this write fails the journal is retained, allowing recovery rather than duplicating work.
-    save(record)
-    state(record).toMap()
+    ModelTransfers.enqueue(context, modelId, url, fileName)
+  }
+
+  @ReactMethod
+  fun pause(modelId: String, promise: Promise) = execute(promise) {
+    validateModelId(modelId)
+    check(ModelTransfers.read(context, modelId) != null) { "This transfer started in an older version. Let it finish, or cancel and start again to enable Pause." }
+    ModelTransfers.pause(context, modelId)
+  }
+
+  @ReactMethod
+  fun resume(modelId: String, promise: Promise) = execute(promise) {
+    validateModelId(modelId)
+    ModelTransfers.resume(context, modelId)
   }
 
   @ReactMethod
   fun getState(modelId: String, promise: Promise) = execute(promise) {
     validateModelId(modelId)
+    if (ModelTransfers.read(context, modelId) != null) {
+      ModelTransfers.recover(context, modelId)
+      return@execute ModelTransfers.state(context, modelId)
+    }
     val record = read(modelId)
     (if (record == null) State("none") else state(recover(record))).toMap()
   }
@@ -217,6 +237,7 @@ class PhoneGptDownloadsModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun cancel(modelId: String, promise: Promise) = execute(promise) {
     validateModelId(modelId)
+    if (ModelTransfers.read(context, modelId) != null) return@execute ModelTransfers.remove(context, modelId)
     val record = read(modelId)
     if (record == null) false else {
       remove(record)
@@ -227,7 +248,8 @@ class PhoneGptDownloadsModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun delete(modelId: String, promise: Promise) = execute(promise) {
     validateModelId(modelId)
-    read(modelId)?.let { remove(it) }
+    if (ModelTransfers.read(context, modelId) != null) ModelTransfers.remove(context, modelId)
+    else read(modelId)?.let { remove(it) }
     null
   }
 }

@@ -1,11 +1,11 @@
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { ScaledText as Text, ScaledTextInput as TextInput } from './ScaledText';
+import { SettingsCard, ActionButton } from './UiKit';
 import type { useSystemPromptSettings } from '../hooks/useSystemPromptSettings';
 import { useAppTheme } from '../theme/AppTheme';
 
 export function SystemPromptSettings({ settings }: { settings: ReturnType<typeof useSystemPromptSettings> }) {
   const { colors, isDark } = useAppTheme();
-  return <View style={{ marginTop: 24, gap: 10 }}>
-    <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 17, fontWeight: '700' }}>System Prompt</Text>
+  return <SettingsCard title="System prompt" icon="chat" description="Set how your model responds in new conversations.">
     <TextInput
       accessibilityLabel="System Prompt"
       placeholder="Your instructions for the model."
@@ -19,10 +19,8 @@ export function SystemPromptSettings({ settings }: { settings: ReturnType<typeof
       style={{ minHeight: 130, maxHeight: 260, color: colors.text, backgroundColor: colors.raised, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 15, lineHeight: 22 }}
     />
     <Text style={{ color: colors.secondary, fontSize: 12 }}>Used privately in new chats. Leave blank for the default.</Text>
-    <Pressable accessibilityRole="button" disabled={!settings.ready || settings.saving} onPress={() => { void settings.save(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 20, paddingVertical: 11, borderRadius: 10, backgroundColor: colors.primary, opacity: settings.ready && !settings.saving ? 1 : 0.5 }}>
-      <Text style={{ color: colors.onPrimary, fontSize: 14, fontWeight: '700' }}>{settings.saving ? 'Saving…' : 'Save'}</Text>
-    </Pressable>
+    <ActionButton label={settings.saving ? 'Saving…' : 'Save instructions'} icon="check" busy={settings.saving} disabled={!settings.ready} onPress={() => { void settings.save(); }} />
     {!!settings.notice && <Text accessibilityLiveRegion="polite" style={{ color: colors.success, fontSize: 12 }}>{settings.notice}</Text>}
     {!!settings.error && <Text accessibilityRole="alert" style={{ color: colors.error, fontSize: 12 }}>{settings.error}</Text>}
-  </View>;
+  </SettingsCard>;
 }

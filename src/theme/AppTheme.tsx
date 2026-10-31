@@ -10,18 +10,18 @@ export type ThemeColors = {
 };
 
 const light: ThemeColors = {
-  background: '#FFFFFF', surface: '#FFFFFF', raised: '#F1F1F5', text: '#171720',
-  secondary: '#60606C', muted: '#747480', border: '#E1E1E7', primary: '#171720',
-  onPrimary: '#FFFFFF', userBubble: '#171720', userText: '#FFFFFF', assistantBubble: '#F1F1F5',
-  error: '#B42318', errorSurface: '#F2E9E9', success: '#16803C', disabled: '#BABAC3',
-  track: '#E8E8EE', fill: '#4B4B57', scrim: 'rgba(0,0,0,0.32)',
+  background: '#F7FAF9', surface: '#FFFFFF', raised: '#EAF3F0', text: '#172D29',
+  secondary: '#536A64', muted: '#657A74', border: '#DCE8E3', primary: '#157568',
+  onPrimary: '#FFFFFF', userBubble: '#157568', userText: '#FFFFFF', assistantBubble: '#FFFFFF',
+  error: '#B42318', errorSurface: '#FCECEA', success: '#157568', disabled: '#BCCBC6',
+  track: '#DCE8E3', fill: '#157568', scrim: 'rgba(12,32,26,0.35)',
 };
 const dark: ThemeColors = {
-  background: '#121418', surface: '#1A1D23', raised: '#242830', text: '#F0F2F6',
-  secondary: '#B6BCC8', muted: '#929CAA', border: '#343942', primary: '#A6E3C5',
-  onPrimary: '#10241A', userBubble: '#234537', userText: '#ECF6F0', assistantBubble: '#20232A',
-  error: '#FFAAA3', errorSurface: '#442825', success: '#8DDFAB', disabled: '#454D5B',
-  track: '#343942', fill: '#A6E3C5', scrim: 'rgba(0,0,0,0.65)',
+  background: '#101B19', surface: '#182724', raised: '#20342F', text: '#EAF3EF',
+  secondary: '#B4C8C0', muted: '#97B1A6', border: '#30483F', primary: '#83D7C1',
+  onPrimary: '#102E26', userBubble: '#285347', userText: '#F0FAF6', assistantBubble: '#182724',
+  error: '#FFAAA3', errorSurface: '#442825', success: '#83D7C1', disabled: '#40574D',
+  track: '#30483F', fill: '#83D7C1', scrim: 'rgba(0,0,0,0.65)',
 };
 
 const THEME_KEY = '@phone-gpt/theme';

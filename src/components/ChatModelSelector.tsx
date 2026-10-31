@@ -1,5 +1,7 @@
+import { AppIcon } from './AppIcon';
+import { ScaledText as Text } from './ScaledText';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { getInstalledModelPath, getModelDownloadState, models, type ModelDefinition } from '../services/models';
 import { useAppTheme } from '../theme/AppTheme';
 
@@ -36,12 +38,12 @@ export function ChatModelSelector({ open, onClose, onSelect, loadedModelId }: {
   return <View style={{ marginHorizontal: 16, marginVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, padding: 12 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>Downloaded models</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close model selector" onPress={onClose} style={{ minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' }}><Text style={{ color: colors.secondary, fontSize: 24 }}>×</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Close model selector" onPress={onClose} style={{ minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' }}><AppIcon name="close" color={colors.secondary} size={20} /></Pressable>
     </View>
     {checking ? <Text accessibilityLiveRegion="polite" style={{ color: colors.secondary, paddingVertical: 8 }}>Checking downloaded models…</Text> : <>
       <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled">
-        {installed.map((model) => <Pressable key={model.id} accessibilityRole="button" accessibilityState={{ selected: loadedModelId === model.id }} accessibilityLabel={`Use ${model.displayName}`} onPress={() => { onClose(); void onSelect(model); }} style={{ padding: 12, minHeight: 48, borderRadius: 8, backgroundColor: loadedModelId === model.id ? colors.raised : colors.surface }}>
-          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>{model.displayName}{loadedModelId === model.id ? ' · Loaded' : ''}</Text>
+        {installed.map((model) => <Pressable key={model.id} accessibilityRole="button" accessibilityState={{ selected: loadedModelId === model.id }} accessibilityLabel={`Use ${model.displayName}`} onPress={() => { onClose(); void onSelect(model); }} style={({ pressed }) => ({ padding: 12, minHeight: 48, borderRadius: 12, flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: loadedModelId === model.id ? colors.raised : colors.surface, opacity: pressed ? 0.7 : 1 })}>
+          <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 }}>{model.displayName}{loadedModelId === model.id ? ' · Loaded' : ''}</Text>{loadedModelId === model.id && <AppIcon name="check" color={colors.primary} size={18} />}
         </Pressable>)}
       </ScrollView>
       {!installed.length && !error && <Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 20 }}>No downloaded models yet. Download one from Menu → Models.</Text>}

@@ -1,6 +1,8 @@
+import { AppIcon } from './AppIcon';
+import { ScaledText as Text } from './ScaledText';
 import { useAppTheme, type ThemeColors } from '../theme/AppTheme';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { ModelDefinition } from '../services/models';
 
 export function groupModelsByProvider(models: ModelDefinition[]) {
@@ -16,20 +18,27 @@ export function groupModelsByProvider(models: ModelDefinition[]) {
     group.push(model);
     groups.set(name, group);
   }
-  return [...groups].map(([name, models]) => ({ name, models }));
+  return [...groups].map(([name, models]) => ({
+    name,
+    models,
+    sections: [
+      { name: 'Censored', models: models.filter((model) => model.censorship === 'censored') },
+      { name: 'Uncensored', models: models.filter((model) => model.censorship === 'uncensored') },
+    ].filter((section) => section.models.length > 0),
+  }));
 }
 
-export function ProviderGroup({ name, count, initiallyExpanded, children }: {
-  name: string; count: number; initiallyExpanded: boolean; children: ReactNode;
+export function ProviderGroup({ name, count, children }: {
+  name: string; count: number; children: ReactNode;
 }) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [expanded, setExpanded] = useState(initiallyExpanded);
+  const [expanded, setExpanded] = useState(false);
   return <View style={styles.group}>
     <Pressable accessibilityRole="button" accessibilityLabel={`${name}, ${count} ${count === 1 ? 'model' : 'models'}`} accessibilityState={{ expanded }} onPress={() => setExpanded((value) => !value)} style={styles.header}>
       <Text style={styles.name}>{name}</Text>
       <Text style={styles.count}>{count} {count === 1 ? 'model' : 'models'}</Text>
-      <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
+      <View style={{ transform: [{ rotate: expanded ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.secondary} size={18} /></View>
     </Pressable>
     {expanded && <View style={styles.models}>{children}</View>}
   </View>;

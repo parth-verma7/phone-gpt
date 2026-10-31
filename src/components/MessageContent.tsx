@@ -1,5 +1,6 @@
+import { ScaledText as Text } from './ScaledText';
 import React, { type ReactNode } from 'react';
-import { Platform, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import { Platform, StyleSheet, View, type TextStyle } from 'react-native';
 
 type MessageContentProps = {
   content: string;

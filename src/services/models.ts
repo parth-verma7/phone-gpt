@@ -3,6 +3,7 @@ import { NativeModules, Platform } from 'react-native';
 import modelCatalog from '../data/models.json';
 
 export type ModelDefinition = (typeof modelCatalog)[number];
+export type DownloadableModel = Pick<ModelDefinition, 'id' | 'downloadUrl' | 'fileName' | 'sizeBytes' | 'minFreeBytes'>;
 
 const MODELS_DIRECTORY = `${FileSystem.documentDirectory}models/`;
 const activeDownloads = new Map<string, FileSystem.DownloadResumable>();
@@ -13,9 +14,13 @@ export type ModelDownloadState = {
   progress: number;
   uri?: string;
   error?: string;
+  canPause?: boolean;
+  pauseReason?: 'manual' | 'network' | 'retry';
 };
 
 type BackgroundDownloads = {
+  pause?: (modelId: string) => Promise<ModelDownloadState>;
+  resume?: (modelId: string) => Promise<ModelDownloadState>;
   enqueue: (modelId: string, url: string, fileName: string) => Promise<ModelDownloadState>;
   getState: (modelId: string) => Promise<ModelDownloadState>;
   cancel: (modelId: string) => Promise<boolean>;
@@ -27,13 +32,25 @@ function backgroundDownloads(): BackgroundDownloads | undefined {
 }
 
 /** Query persisted OS downloads, including those started by a previous app process. */
-export async function getModelDownloadState(model: ModelDefinition): Promise<ModelDownloadState> {
+export async function getModelDownloadState(model: DownloadableModel): Promise<ModelDownloadState> {
   const native = backgroundDownloads();
   if (native) return native.getState(model.id);
   return {
     status: activeDownloads.has(model.id) ? 'running' : 'none',
     progress: 0,
   };
+}
+
+export async function pauseModelDownload(model: DownloadableModel) {
+  const native = backgroundDownloads();
+  if (!native?.pause) throw new Error('Install the updated Dev APK to enable Pause and Resume.');
+  return native.pause(model.id);
+}
+
+export async function resumeModelDownload(model: DownloadableModel) {
+  const native = backgroundDownloads();
+  if (!native?.resume) throw new Error('Install the updated Dev APK to enable Pause and Resume.');
+  return native.resume(model.id);
 }
 
 export class ModelDownloadCancelledError extends Error {
@@ -45,16 +62,19 @@ export class ModelDownloadCancelledError extends Error {
 
 export const models = modelCatalog as ModelDefinition[];
 
-export function modelPath(model: ModelDefinition) {
+export function modelPath(model: DownloadableModel) {
   return `${MODELS_DIRECTORY}${model.fileName}`;
 }
 
-export async function getInstalledModelPath(model: ModelDefinition) {
+export async function getInstalledModelPath(model: DownloadableModel) {
   if (Platform.OS === 'web') return null;
   const native = backgroundDownloads();
   if (native) {
     const state = await native.getState(model.id);
     if (state.status === 'completed' && state.uri) return state.uri;
+    // A recorded transfer is authoritative: never substitute a stale legacy
+    // file while this model is incomplete, failed, or still downloading.
+    if (state.status !== 'none') return null;
   }
   const path = modelPath(model);
   const file = await FileSystem.getInfoAsync(path);
@@ -63,18 +83,23 @@ export async function getInstalledModelPath(model: ModelDefinition) {
   return file.exists && (file.size ?? 0) >= model.sizeBytes * 0.8 ? path : null;
 }
 
-export async function deleteInstalledModel(model: ModelDefinition) {
+export async function deleteInstalledModel(model: DownloadableModel) {
   await backgroundDownloads()?.delete(model.id);
   await FileSystem.deleteAsync(modelPath(model), { idempotent: true });
 }
 
-export async function cancelModelDownload(model: ModelDefinition) {
+export async function cancelModelDownload(model: DownloadableModel) {
   const native = backgroundDownloads();
   if (native) {
     cancelledDownloads.add(model.id);
-    const cancelled = await native.cancel(model.id);
-    if (!cancelled) cancelledDownloads.delete(model.id);
-    return cancelled;
+    try {
+      const cancelled = await native.cancel(model.id);
+      if (!cancelled) cancelledDownloads.delete(model.id);
+      return cancelled;
+    } catch (error) {
+      cancelledDownloads.delete(model.id);
+      throw error;
+    }
   }
   const task = activeDownloads.get(model.id);
   if (!task) return false;
@@ -89,12 +114,13 @@ export async function cancelModelDownload(model: ModelDefinition) {
 }
 
 export async function downloadModel(
-  model: ModelDefinition,
+  model: DownloadableModel,
   onProgress: (progress: number) => void,
+  onState?: (state: ModelDownloadState) => void,
 ) {
   const native = backgroundDownloads();
   if (Platform.OS === 'android' && !native) {
-    throw new Error('Install PhoneGPT v0.3.6 or later to enable background model downloads.');
+    throw new Error('Install the updated native PhoneGPT app to enable background model downloads.');
   }
   if (native) {
     cancelledDownloads.delete(model.id);
@@ -111,7 +137,9 @@ export async function downloadModel(
     try {
       for (;;) {
         if (cancelledDownloads.has(model.id)) throw new ModelDownloadCancelledError();
-        onProgress(state.progress);
+        const progress = Number.isFinite(state.progress) ? Math.max(0, Math.min(1, state.progress)) : 0;
+        onProgress(progress);
+        onState?.({ ...state, progress });
         if (state.status === 'completed' && state.uri) return state.uri;
         if (state.status === 'failed') throw new Error(state.error || 'The model download failed. Please retry.');
         if (state.status === 'none') throw new ModelDownloadCancelledError();
@@ -144,12 +172,17 @@ export async function downloadModel(
     const result = await task.downloadAsync();
     if (cancelledDownloads.has(model.id)) throw new ModelDownloadCancelledError();
     if (!result?.uri) throw new Error('The model download did not complete.');
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`The model host returned HTTP ${result.status}. Please retry or choose another model.`);
+    }
     const downloadedFile = await FileSystem.getInfoAsync(result.uri);
     if (!downloadedFile.exists || (downloadedFile.size ?? 0) < model.sizeBytes * 0.8) {
       throw new Error('The downloaded model appears incomplete. Please try again.');
     }
     return result.uri;
   } catch (error) {
+    // A failed legacy transfer must not leave a partial file looking installed.
+    await FileSystem.deleteAsync(destination, { idempotent: true }).catch(() => undefined);
     if (cancelledDownloads.has(model.id)) throw new ModelDownloadCancelledError();
     throw error;
   } finally {

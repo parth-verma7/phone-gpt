@@ -24,7 +24,10 @@ class MainApplication : Application(), ReactApplication {
           // Packages that cannot be autolinked yet can be added manually here, for example:
           // add(MyReactNativePackage())
           add(PhoneGptDownloadsPackage())
-        }
+        },
+      // Release uses the embedded bundle; only debug builds connect to Metro.
+      useDevSupport = BuildConfig.DEBUG,
+      jsBundleAssetPath = "index.android.bundle"
     )
   }
 

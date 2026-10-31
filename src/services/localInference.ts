@@ -17,7 +17,7 @@ export const DEFAULT_INFERENCE_SETTINGS: InferenceSettings = {
   contextSize: 2048,
 };
 
-type LocalContext = Pick<LlamaContext, 'completion' | 'release' | 'tokenize'>;
+type LocalContext = Pick<LlamaContext, 'completion' | 'release' | 'tokenize' | 'stopCompletion'>;
 
 let context: LocalContext | null = null;
 let loadedModelPath: string | null = null;
@@ -62,7 +62,7 @@ export async function loadLocalModel(
   contextSize: ContextSize,
   onProgress?: (progress: number) => void,
 ) {
-  if (Platform.OS === 'web') throw new Error('Local model inference requires the Android PhoneGPT development build.');
+  if (Platform.OS === 'web') throw new Error('Local model inference requires the native Android PhoneGPT app.');
   if (context && loadedModelPath === path && loadedContextSize === contextSize) return;
 
   await unloadLocalModel();
@@ -85,52 +85,89 @@ export async function loadLocalModel(
   loadedContextSize = contextSize;
 }
 
+export class GenerationStoppedError extends Error {
+  constructor(public readonly partialText: string) {
+    super('Generation stopped.');
+    this.name = 'GenerationStoppedError';
+  }
+}
+
 export async function generateLocalReply(
   messages: ChatMessage[],
   settings: InferenceSettings = DEFAULT_INFERENCE_SETTINGS,
   customPrompt?: string,
   onProgress?: (fullText: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (!context) throw new Error('Load a model before sending a message.');
+  if (signal?.aborted) throw new GenerationStoppedError('');
+  const activeContext = context;
   const thinkingEnabled = settings.reasoningMode !== 'off';
   let streamedText = '';
-  const result = await context.completion({
-    messages: [
-      {
-        role: 'system',
-        content: effectiveSystemPrompt(settings, customPrompt),
-      },
-      ...messages,
-    ],
-    // Qwen's GGUF chat template receives this directly. Passing it both ways
-    // covers templates that read the value from Jinja kwargs.
-    enable_thinking: thinkingEnabled,
-    // Parsing only affects content/reasoning_content metadata. Native token
-    // deltas and result.text retain raw output regardless of the parser.
-    reasoning_format: 'auto',
-    // These controls depend on the template exposing thinking support/tags.
-    // Reserve part of n_predict for the answer, even with a small token limit.
-    thinking_budget_tokens: settings.reasoningMode === 'short'
-      ? Math.min(128, Math.floor(settings.maxTokens / 3))
-      : settings.reasoningMode === 'extended'
-        ? Math.min(512, Math.floor(settings.maxTokens * 2 / 3))
-        : 0,
-    chat_template_kwargs: { enable_thinking: thinkingEnabled },
-    n_predict: settings.maxTokens,
-    temperature: 0.7,
-    top_p: 0.9,
-    stop: STOP_WORDS,
-  }, onProgress ? ({ token }) => {
-    // token is a raw delta. accumulated_text includes parser prefill, so using
-    // it here could duplicate text that was already part of the prompt.
-    streamedText += token;
-    onProgress(streamedText);
-  } : undefined);
-  // Replace the stream with the authoritative raw result; never append it or
-  // merge parsed fields, which can duplicate text or discard reasoning.
-  const fullText = result.text || streamedText;
-  if (fullText !== streamedText) onProgress?.(fullText);
-  return fullText || 'I could not generate a response. Please try again.';
+  let settled = false;
+  let stopTask: Promise<void> | undefined;
+  let stopTimer: ReturnType<typeof setInterval> | undefined;
+  const requestStop = () => {
+    if (settled || stopTask) return;
+    stopTask = Promise.resolve().then(() => activeContext.stopCompletion()).catch(() => undefined).finally(() => { stopTask = undefined; });
+  };
+  const abort = () => {
+    requestStop();
+    // completion() formats chat asynchronously before starting native work.
+    // Retry the stop across that boundary, without overlapping stop requests.
+    stopTimer ??= setInterval(requestStop, 100);
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    const result = await activeContext.completion({
+      messages: [
+        {
+          role: 'system',
+          content: effectiveSystemPrompt(settings, customPrompt),
+        },
+        ...messages,
+      ],
+      // Qwen's GGUF chat template receives this directly. Passing it both ways
+      // covers templates that read the value from Jinja kwargs.
+      enable_thinking: thinkingEnabled,
+      // Parsing only affects content/reasoning_content metadata. Native token
+      // deltas and result.text retain raw output regardless of the parser.
+      reasoning_format: 'auto',
+      // These controls depend on the template exposing thinking support/tags.
+      // Reserve part of n_predict for the answer, even with a small token limit.
+      thinking_budget_tokens: settings.reasoningMode === 'short'
+        ? Math.min(128, Math.floor(settings.maxTokens / 3))
+        : settings.reasoningMode === 'extended'
+          ? Math.min(512, Math.floor(settings.maxTokens * 2 / 3))
+          : 0,
+      chat_template_kwargs: { enable_thinking: thinkingEnabled },
+      n_predict: settings.maxTokens,
+      temperature: 0.7,
+      top_p: 0.9,
+      stop: STOP_WORDS,
+    }, ({ token }) => {
+      if (signal?.aborted) { requestStop(); return; }
+      // token is a raw delta. accumulated_text includes parser prefill, so using
+      // it here could duplicate text that was already part of the prompt.
+      streamedText += token;
+      onProgress?.(streamedText);
+    });
+    if (signal?.aborted) throw new GenerationStoppedError(streamedText);
+    // Replace the stream with the authoritative raw result; never append it or
+    // merge parsed fields, which can duplicate text or discard reasoning.
+    const fullText = result.text || streamedText;
+    if (fullText !== streamedText) onProgress?.(fullText);
+    return fullText || 'I could not generate a response. Please try again.';
+  } catch (error) {
+    if (signal?.aborted) throw new GenerationStoppedError(streamedText);
+    throw error;
+  } finally {
+    settled = true;
+    signal?.removeEventListener('abort', abort);
+    if (stopTimer) clearInterval(stopTimer);
+    // Drain a pending stop before allowing the next request to use this context.
+    await stopTask;
+  }
 }
 
 export async function unloadLocalModel() {

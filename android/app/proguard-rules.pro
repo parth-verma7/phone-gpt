@@ -12,3 +12,6 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# whisper.rn native runtime
+-keep class com.rnwhisper.** { *; }

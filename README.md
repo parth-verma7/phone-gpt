@@ -1,5 +1,7 @@
 # PhoneGPT
 
+**Website:** [Explore PhoneGPT](https://parth-verma7.github.io/phone-gpt-website/)
+
 PhoneGPT downloads models and runs chat and English voice transcription on the phone. Conversations, attachments and preferences stay in app-local storage; there is no chat backend or mandatory account. React Native targets Android and iOS; the implemented native build and main physical test target are Android / Samsung A54.
 
 Start with [PROJECT_TRACKER.md](PROJECT_TRACKER.md), the [A54 test checklist](docs/A54_TEST_CHECKLIST.md), and the [Play Store release plan](docs/PLAY_STORE_RELEASE_PLAN.md). Last reviewed: **2026-10-31**. Optional email/password accounts remain a future [proposal](docs/AUTHENTICATION_PLAN.md); no account database is provisioned.

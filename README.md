@@ -1,6 +1,6 @@
 # PhoneGPT
 
-**Website:** [Explore PhoneGPT](https://parth-verma7.github.io/phone-gpt-website/)
+**Website:** [Explore PhoneGPT](https://phone-gpt.pages.dev/)
 
 PhoneGPT downloads models and runs chat and English voice transcription on the phone. Conversations, attachments and preferences stay in app-local storage; there is no chat backend or mandatory account. React Native targets Android and iOS; the implemented native build and main physical test target are Android / Samsung A54.
 

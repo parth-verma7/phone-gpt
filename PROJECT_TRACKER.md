@@ -193,3 +193,5 @@ Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/)
 
 - [x] **Standalone 0.5.9/code 23:** four-tab navigation with Home retained, first-message titles, readable previews, Edit/confirmed deletion and web fixes packaged; signer matches 0.5.8. 180 automated checks passed.
 - [x] **0.5.9 GitHub publication authorized:** owner requested the push on 2026-11-07. Includes navigation, editing, preview formatting, web fixes and documentation. Native A54 acceptance remains separate; the earlier 0.5.8 sync was 7d3794e.
+
+- [x] **Chat-row spacing (source):** show start time only; remove visible date label while retaining creation metadata, accessible full date and chronological ordering.

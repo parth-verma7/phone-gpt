@@ -50,6 +50,9 @@ test('Chats lists by creation time, shows last-message previews and searches ins
   assert.ok(find(row, n => n.type === 'Text' && n.props.children?.[0]?.props?.children === 'Latest preview'));
   find(row, n => n.type === 'Button').props.onPress(); assert.equal(h.selected(), recent);
   assert.equal(find(row, n => n.type === 'Delete'), undefined, 'normal rows must not expose a trash action');
+  assert.equal(find(row, n => n.type === 'Text' && n.props.children === list.props.data[0].date), undefined, 'date must not consume visible row width');
+  assert.ok(find(row, n => n.type === 'Text' && n.props.children === list.props.data[0].time), 'start time remains visible');
+  assert.ok(find(row, n => n.type === 'Button').props.accessibilityLabel.includes(list.props.data[0].date), 'full date remains accessible');
   find(tree, n => n.type === 'Input').props.onChangeText('unique');
   list = find(h.render(), n => n.type === 'List');
   assert.equal(list.props.data.length, 1); assert.equal(list.props.data[0].chat, old); assert.match(list.props.data[0].snippet, /unique/);

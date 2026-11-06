@@ -1,6 +1,6 @@
 import type { WhisperContext } from 'whisper.rn/index';
-import { LIVE_TRANSCRIPTION_INTERVAL_MS } from '../config/voice';
-import type { Recorder, VoiceSnapshot } from './voice';
+import { LIVE_TRANSCRIPTION_READINESS_MS } from '../config/voice';
+import { cleanTranscript, type Recorder, type VoiceSnapshot } from './voice';
 
 // Fixed-size overlapping windows bound inference cost as the recording grows.
 const WINDOW_SAMPLES = 12 * 16000;
@@ -23,12 +23,13 @@ export function joinOverlappingTranscript(previous: string, next: string) {
 
 export class LiveTranscription {
   private offset = 0;
-  private lastEnd = -1;
+  private lastEnd = 0;
   private committed = '';
   private cancelled = false;
-  private timer?: ReturnType<typeof setInterval>;
-  private pending?: Promise<void>;
+  private timer?: ReturnType<typeof setTimeout>;
+  private pending?: Promise<unknown>;
   private abort?: () => Promise<void>;
+  private running = false;
 
   constructor(private options: {
     context: WhisperContext;
@@ -40,22 +41,41 @@ export class LiveTranscription {
   }) {}
 
   start() {
-    this.timer = setInterval(() => {
-      // Coalesce ticks while busy, rather than queueing concurrent jobs.
-      if (this.pending || this.cancelled) return;
-      const job = this.process(false);
-      this.pending = job;
-      void job.catch((error) => { if (!this.cancelled) this.options.onError(error); })
-        .finally(() => { if (this.pending === job) this.pending = undefined; });
-    }, LIVE_TRANSCRIPTION_INTERVAL_MS);
+    if (this.running || this.cancelled) return;
+    this.running = true;
+    this.scheduleReadinessCheck();
+  }
+
+  private scheduleReadinessCheck() {
+    if (!this.running || this.cancelled) return;
+    this.timer = setTimeout(() => { this.timer = undefined; this.run(); }, LIVE_TRANSCRIPTION_READINESS_MS);
+  }
+
+  private run() {
+    if (!this.running || this.cancelled || this.pending) return;
+    const job = this.process(false);
+    this.pending = job;
+    void job.then((advanced) => {
+      if (this.pending === job) this.pending = undefined;
+      if (!this.running || this.cancelled) return;
+      if (advanced) this.run(); // Decode/file cleanup settled; check fresh audio now.
+      else this.scheduleReadinessCheck();
+    }, (error) => {
+      if (this.pending === job) this.pending = undefined;
+      this.running = false;
+      if (!this.cancelled) this.options.onError(error);
+    });
   }
 
   private async process(final: boolean) {
     while (!this.cancelled) {
       const snapshot: VoiceSnapshot = await this.options.recorder.snapshot!(this.options.uri, this.offset, WINDOW_SAMPLES);
       try {
-        if (this.cancelled) return;
-        if (!snapshot.uri || snapshot.sampleCount < MIN_SAMPLES || snapshot.endSample === this.lastEnd) return;
+        if (this.cancelled) return false;
+        // Total window size alone is insufficient: overlapping windows can be
+        // long while containing just a handful of samples newer than lastEnd.
+        const newSamples = snapshot.endSample - this.lastEnd;
+        if (!snapshot.uri || snapshot.sampleCount < MIN_SAMPLES || newSamples <= 0 || (!final && newSamples < MIN_SAMPLES)) return false;
         this.lastEnd = snapshot.endSample;
         let text = '';
         if (snapshot.hasSpeech) {
@@ -64,27 +84,29 @@ export class LiveTranscription {
             prompt: this.committed.slice(-600) || undefined,
           });
           this.abort = task.stop;
-          const result = await task.promise;
-          this.abort = undefined;
-          if (this.cancelled || result.isAborted) return;
-          text = result.result.trim();
+          let result;
+          try { result = await task.promise; } finally { this.abort = undefined; }
+          if (this.cancelled || result.isAborted) return false;
+          text = cleanTranscript(result.result);
         }
-        if (this.cancelled) return;
+        if (this.cancelled) return false;
         const combined = joinOverlappingTranscript(this.committed, text);
-        if (combined) this.options.onText(combined);
-        if (snapshot.sampleCount < WINDOW_SAMPLES) return;
+        if (text && combined) this.options.onText(combined);
+        if (snapshot.sampleCount < WINDOW_SAMPLES) return true;
         this.committed = combined;
         this.offset = snapshot.endSample - OVERLAP_SAMPLES;
-        // At most one window per live tick. Stop drains all remaining audio.
-        if (!final) return;
+        // Live work also drains ready windows, one serial job at a time.
+        if (!final) return true;
       } finally {
         if (snapshot.uri) await this.options.removeFile(snapshot.uri).catch(() => undefined);
       }
     }
+    return false;
   }
 
   async finish() {
-    clearInterval(this.timer);
+    this.running = false;
+    clearTimeout(this.timer);
     await this.pending;
     if (this.cancelled) return;
     const job = this.process(true);
@@ -94,7 +116,8 @@ export class LiveTranscription {
 
   async cancel() {
     this.cancelled = true;
-    clearInterval(this.timer);
+    this.running = false;
+    clearTimeout(this.timer);
     await this.abort?.().catch(() => undefined);
     await this.pending?.catch(() => undefined);
   }

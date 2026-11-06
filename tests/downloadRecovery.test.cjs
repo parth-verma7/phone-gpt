@@ -18,8 +18,10 @@ function harness({ native, platform = 'android', info = { exists: true, size: 10
   const code = ts.transpileModule(fs.readFileSync('src/services/models.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   vm.runInNewContext(code, { exports, require: name => {
     if (name === 'expo-file-system/legacy') return fileSystem;
+    if (name === 'expo') return { requireOptionalNativeModule: () => native };
     if (name === 'react-native') return { Platform: { OS: platform }, NativeModules: { PhoneGptDownloads: native } };
-    if (name === '../data/models.json') return [model];
+    if (name === '../data/models.json') return { default: [model] };
+    if (name === '../config/features') return { UNCENSORED_MODELS_ENABLED: false };
     throw Error(name);
   }, setTimeout: fn => { calls.timers++; queueMicrotask(fn); } });
   return { api: exports, calls };
@@ -82,13 +84,13 @@ test('failed cancel does not poison the next attachment to a running download', 
 });
 
 test('legacy HTTP error removes the destination even if the error body is large', async () => {
-  const h = harness({ platform: 'ios', result: { uri: 'file:///model.gguf', status: 403 } });
+  const h = harness({ platform: 'macos', result: { uri: 'file:///model.gguf', status: 403 } });
   await assert.rejects(h.api.downloadModel(model, () => {}), /HTTP 403/);
   assert.equal(h.calls.removed.at(-1), 'file:///private/models/model.gguf');
 });
 
 test('legacy incomplete transfer is removed after verification fails', async () => {
-  const h = harness({ platform: 'ios', info: { exists: true, size: 20 } });
+  const h = harness({ platform: 'macos', info: { exists: true, size: 20 } });
   await assert.rejects(h.api.downloadModel(model, () => {}), /incomplete/);
   assert.equal(h.calls.removed.at(-1), 'file:///private/models/model.gguf');
 });
@@ -116,6 +118,26 @@ test('manual pause stays paused when reattaching; no implicit resume', async () 
 
 test('old native APK gets an actionable upgrade error for pause and resume', async () => {
   const h = harness({ native: {} });
-  await assert.rejects(h.api.pauseModelDownload(model), /updated Dev APK/);
-  await assert.rejects(h.api.resumeModelDownload(model), /updated Dev APK/);
+  await assert.rejects(h.api.pauseModelDownload(model), /updated native PhoneGPT build/);
+  await assert.rejects(h.api.resumeModelDownload(model), /updated native PhoneGPT build/);
+});
+
+for (const platform of ['android', 'ios']) {
+  test(`${platform}: persistent download bridge supports reattachment, pause and resume`, async () => {
+    const calls = [];
+    const h = harness({ platform, native: {
+      getState: async () => ({ status: 'completed', progress: 1, uri: 'file:///native/model.gguf' }),
+      pause: async id => { calls.push(`pause:${id}`); return { status: 'paused', progress: 0.5, pauseReason: 'manual' }; },
+      resume: async id => { calls.push(`resume:${id}`); return { status: 'running', progress: 0.5 }; },
+    } });
+    assert.equal(await h.api.downloadModel(model, () => {}), 'file:///native/model.gguf');
+    await h.api.pauseModelDownload(model); await h.api.resumeModelDownload(model);
+    assert.deepEqual(calls, ['pause:test-model', 'resume:test-model']);
+    assert.equal(h.calls.disk, 0);
+  });
+}
+test('iOS without its native background module reports an upgrade, not a fragile JS download', async () => {
+  const h = harness({ platform: 'ios' });
+  await assert.rejects(h.api.downloadModel(model, () => {}), /updated native PhoneGPT/);
+  assert.equal(h.calls.disk, 0);
 });

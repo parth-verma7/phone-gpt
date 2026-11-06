@@ -10,6 +10,8 @@ function load(file, dependencies, globals = {}) {
   vm.runInNewContext(code, { exports, require: name => { if (!(name in dependencies)) throw Error(name); return dependencies[name]; }, ...globals });
   return exports;
 }
+const voiceService = load('src/services/voice.ts', { 'react-native': {}, '../data/voiceModels.json': catalog });
+const voiceConfig = load('src/config/voice.ts', {});
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve; const promise = new Promise(r => resolve = r); return { promise, resolve }; }
 function harness({ permission = async () => {}, transcription, contextInit, mode = 'recording', snapshots = [], missingSnapshot = false } = {}) {
@@ -30,8 +32,10 @@ function harness({ permission = async () => {}, transcription, contextInit, mode
     Date: class extends Date { static now() { return now; } },
     setInterval(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearInterval(id) { timers.delete(id); },
+    setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms, once: true }); return id; },
+    clearTimeout(id) { timers.delete(id); },
   };
-  const live = load('src/services/liveTranscription.ts', { '../config/voice': { LIVE_TRANSCRIPTION_INTERVAL_MS: 1000 } }, globals);
+  const live = load('src/services/liveTranscription.ts', { '../config/voice': voiceConfig, './voice': voiceService }, globals);
   const hook = load('src/hooks/useVoiceTyping.ts', {
     react,
     '@react-native-async-storage/async-storage': { default: { getItem: async () => catalog[0].id, setItem: async () => {}, removeItem: async () => {} } },
@@ -45,7 +49,7 @@ function harness({ permission = async () => {}, transcription, contextInit, mode
       } },
     },
     '../services/models': { getInstalledModelPath: async () => '/model.bin', getModelDownloadState: async () => ({ status: 'completed' }) },
-    '../services/voice': { voiceModels: catalog, createVoiceContext: async () => { calls.inits++; return contextInit ? contextInit.promise : context; }, getVoiceRecorder: () => recorder, requestMicrophonePermission: permission },
+    '../services/voice': { cleanTranscript: voiceService.cleanTranscript, voiceModels: catalog, createVoiceContext: async () => { calls.inits++; return contextInit ? contextInit.promise : context; }, getVoiceRecorder: () => recorder, requestMicrophonePermission: permission },
     '../config/voice': { VOICE_TRANSCRIPTION_MODE: mode },
     '../services/liveTranscription': live,
   }, globals).useVoiceTyping;
@@ -53,7 +57,7 @@ function harness({ permission = async () => {}, transcription, contextInit, mode
   return {
     render, calls, context, listeners, timers,
     emit(event) { for (const listener of listeners) listener(event); },
-    advance(ms) { now += ms; for (const timer of [...timers.values()]) timer.fn(); },
+    advance(ms) { now += ms; for (const [id, timer] of [...timers]) { if (timer.once) timers.delete(id); timer.fn(); } },
     unmount() { for (const slot of slots) slot?.cleanup?.(); },
   };
 }
@@ -62,6 +66,25 @@ test('append preserves typed draft, joins with one space and ignores empty trans
   assert.equal(appendTranscript('Typed draft  ', ' spoken text '), 'Typed draft spoken text');
   assert.equal(appendTranscript('', ' hello '), 'hello');
   assert.equal(appendTranscript('Keep this', '  '), 'Keep this');
+  assert.equal(appendTranscript('Keep this  ', '[BLANK_AUDIO] [silence]'), 'Keep this  ');
+  assert.equal(appendTranscript('Typed', '[BLANK_AUDIO] real words [no_speech] continue'), 'Typed real words continue');
+});
+test('known speech markers are removed while real text and ordinary brackets survive', () => {
+  const { cleanTranscript } = voiceService;
+  for (const marker of ['[BLANK_AUDIO]', '[blank audio]', '[ Blank-Audio ]', '[SILENCE]', '[no_speech]', '[no audio]', '[inaudible]', '[MUSIC]', '<|nospeech|>', '<|blank_audio|>']) {
+    assert.equal(cleanTranscript(marker), '', marker);
+    assert.equal(cleanTranscript(`Before ${marker} after.`), 'Before after.', marker);
+  }
+  assert.equal(cleanTranscript('<|startoftranscript|><|en|><|transcribe|><|0.00|>Hello world.<|1.23|><|endoftext|>'), 'Hello world.');
+  assert.equal(cleanTranscript('Discuss [important] words and silence in this sentence.'), 'Discuss [important] words and silence in this sentence.');
+});
+test('recorded fallback never forwards markers, including marker-only silence', async () => {
+  for (const [result, expected] of [['[BLANK_AUDIO] [Silence]', []], ['[BLANK_AUDIO] Hello [no_speech] world.', ['Hello world.']]]) {
+    const h = harness({ transcription: { promise: Promise.resolve({ result, isAborted: false }) } });
+    h.render(); await tick(); await h.render().start(); await h.render().stop();
+    assert.deepEqual(h.calls.texts, expected);
+    assert.equal(h.calls.release, 1); assert.equal(h.calls.removed.length, 1);
+  }
 });
 test('four English models use distinct IDs/files and sufficient storage allowances', () => {
   assert.equal(catalog.length, 4);
@@ -149,11 +172,11 @@ test('unmount removes meter subscription and timers; another recording gets a fr
 });
 
 const liveSlice = end => ({ uri: `file:///slice-${end}.wav`, sampleCount: end, endSample: end, hasSpeech: true });
-test('live hook loads Whisper before recording and emits drafts every second, reusing context through stop', async () => {
+test('live hook loads Whisper before recording and drains ready drafts, reusing context through stop', async () => {
   const h = harness({ mode: 'live', snapshots: [liveSlice(32000), liveSlice(64000)] });
   h.render(); await tick(); await h.render().start(); h.render();
   assert.equal(h.calls.inits, 1); assert.equal(h.calls.start, 1);
-  h.advance(2000); await tick(); assert.equal(h.calls.texts.length, 1);
+  h.advance(200); await tick(); assert.equal(h.calls.texts.length, 2);
   assert.equal(typeof h.calls.liveIds[0], 'string');
   await h.render().stop(); h.render();
   assert.equal(h.calls.inits, 1); assert.equal(h.calls.release, 1);
@@ -183,4 +206,25 @@ test('live mode explains an outdated native build and does not start recording',
   assert.equal(h.calls.start, 0); assert.equal(h.calls.inits, 0);
   assert.match(h.calls.alerts[0][1], /updated PhoneGPT live transcription APK/);
   assert.equal(h.render().status, 'idle');
+});
+
+test('iOS voice uses the local Expo recorder and its permission API, not Android permissions', async () => {
+  let requests = 0;
+  const recorder = { requestPermission: async () => { requests++; return true; }, start: async () => 'file:///recording.wav' };
+  const voice = load('src/services/voice.ts', {
+    'react-native': { Platform: { OS: 'ios' }, TurboModuleRegistry: { get: () => ({}) }, NativeModules: {}, PermissionsAndroid: { request: () => assert.fail('Android permission must not run') } },
+    expo: { requireOptionalNativeModule: name => { assert.equal(name, 'PhoneGptRecorder'); return recorder; } },
+    '../data/voiceModels.json': catalog,
+  });
+  assert.equal(voice.getVoiceRecorder(), recorder);
+  await voice.requestMicrophonePermission(); assert.equal(requests, 1);
+  recorder.requestPermission = async () => false;
+  await assert.rejects(voice.requestMicrophonePermission(), /iPhone Settings/);
+});
+test('iOS missing native speech modules explains the build requirement', () => {
+  const voice = load('src/services/voice.ts', {
+    'react-native': { Platform: { OS: 'ios' }, TurboModuleRegistry: { get: () => null } },
+    expo: { requireOptionalNativeModule: () => null }, '../data/voiceModels.json': catalog,
+  });
+  assert.throws(() => voice.getVoiceRecorder(), /updated native PhoneGPT iOS build/);
 });

@@ -17,6 +17,7 @@ async function harness({ delayedStart = false, rejectOnStop = false } = {}) {
   const code = ts.transpileModule(fs.readFileSync('src/services/localInference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   vm.runInNewContext(code, { exports, require: name => {
     if (name === 'react-native') return { Platform: { OS: 'android' } };
+    if (name === './tokenLimits') { const result = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/services/tokenLimits.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: result }); return result; }
     if (name === 'llama.rn') return { initLlama: async () => context };
     throw Error(name);
   }, setInterval: fn => { timer = fn; return 1; }, clearInterval: () => { timer = undefined; calls.timerCleared++; } });

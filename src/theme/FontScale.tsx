@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 export const FONT_SCALE_PRESETS = [0.5, 0.8, 1, 1.2, 1.5] as const;
 export type FontScale = (typeof FONT_SCALE_PRESETS)[number];
+export const DEFAULT_FONT_SCALE: FontScale = 0.8;
 export const FONT_SCALE_STORAGE_KEY = '@phone-gpt/font-scale';
 
 export type FontScaleState = {
@@ -17,14 +18,14 @@ function isFontScale(value: number): value is FontScale {
 }
 
 const FontScaleContext = createContext<FontScaleState>({
-  fontScale: 1,
+  fontScale: DEFAULT_FONT_SCALE,
   setFontScale: () => undefined,
   ready: false,
   error: null,
 });
 
 export function FontScaleProvider({ children }: { children: ReactNode }) {
-  const [fontScale, updateFontScale] = useState<FontScale>(1);
+  const [fontScale, updateFontScale] = useState<FontScale>(DEFAULT_FONT_SCALE);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const changed = useRef(false);

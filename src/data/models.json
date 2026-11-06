@@ -4,14 +4,30 @@
     "provider": "Qwen",
     "displayName": "Qwen 3.5 0.8B",
     "capabilities": [
-      "Text → Text",
-      "Image → Text"
+      "Text → Text"
     ],
     "hfUrl": "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF",
     "downloadUrl": "https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf",
     "fileName": "Qwen3.5-0.8B-Q4_0.gguf",
     "sizeBytes": 590000000,
     "minFreeBytes": 1400000000,
+    "contextSize": 2048,
+    "status": "available",
+    "censorship": "censored",
+    "preferred": true
+  },
+  {
+    "id": "qwen-3-5-2b",
+    "provider": "Qwen",
+    "displayName": "Qwen 3.5 2B",
+    "capabilities": [
+      "Text → Text"
+    ],
+    "hfUrl": "https://huggingface.co/Qwen/Qwen3.5-2B",
+    "downloadUrl": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
+    "fileName": "Qwen3.5-2B-Q4_K_M.gguf",
+    "sizeBytes": 1280835840,
+    "minFreeBytes": 3200000000,
     "contextSize": 2048,
     "status": "available",
     "censorship": "censored"
@@ -43,6 +59,22 @@
     "downloadUrl": "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
     "fileName": "smollm2-1.7b-instruct-q4_k_m.gguf",
     "sizeBytes": 1060000000,
+    "minFreeBytes": 2800000000,
+    "contextSize": 2048,
+    "status": "available",
+    "censorship": "censored"
+  },
+  {
+    "id": "deepseek-r1-distill-qwen-1-5b",
+    "provider": "DeepSeek",
+    "displayName": "DeepSeek R1 Distill Qwen 1.5B",
+    "capabilities": [
+      "Text → Text"
+    ],
+    "hfUrl": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "downloadUrl": "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+    "fileName": "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+    "sizeBytes": 1117320800,
     "minFreeBytes": 2800000000,
     "contextSize": 2048,
     "status": "available",
@@ -81,17 +113,32 @@
     "censorship": "uncensored"
   },
   {
+    "id": "gemma-3-1b-it",
+    "provider": "Google",
+    "displayName": "Gemma 3 1B Instruct",
+    "capabilities": [
+      "Text → Text"
+    ],
+    "hfUrl": "https://huggingface.co/google/gemma-3-1b-it",
+    "downloadUrl": "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/main/google_gemma-3-1b-it-Q4_K_M.gguf",
+    "fileName": "google_gemma-3-1b-it-Q4_K_M.gguf",
+    "sizeBytes": 806058496,
+    "minFreeBytes": 2200000000,
+    "contextSize": 2048,
+    "status": "available",
+    "censorship": "censored"
+  },
+  {
     "id": "gemma-4-e2b-it",
     "provider": "Google",
     "displayName": "Gemma 4 E2B Instruct",
     "capabilities": [
-      "Text → Text",
-      "Image → Text"
+      "Text → Text"
     ],
-    "hfUrl": "https://huggingface.co/google/gemma-4-E2B-it-qat-mobile-ct",
+    "hfUrl": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf",
     "downloadUrl": "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf/resolve/main/gemma-4-E2B_q4_0-it.gguf",
     "fileName": "gemma-4-E2B_q4_0-it.gguf",
-    "sizeBytes": 3350000000,
+    "sizeBytes": 3349516256,
     "minFreeBytes": 7000000000,
     "contextSize": 2048,
     "status": "available",

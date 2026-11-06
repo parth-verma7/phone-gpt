@@ -34,3 +34,17 @@ android/app/src/main/assets/ggml-hexagon/
 .DS_Store
 *.log
 Gemini_Generated_Image*.png
+
+# iOS local tooling, signing and build products
+ios/Pods/
+ios/.xcode.env.local
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.mobileprovision
+*.p12
+*.xcarchive/
+
+# Python verification cache
+__pycache__/
+*.py[cod]

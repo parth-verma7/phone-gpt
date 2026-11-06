@@ -56,30 +56,35 @@ function find(node, predicate) {
 // Keep hook state between renders; native children remain inspectable callback surfaces.
 function hooks() {
   const cells = [];
+  const references = [];
   let cursor = 0;
   return {
     begin() { cursor = 0; },
+    references,
     react: {
       useState(initial) {
         const i = cursor++;
         if (!(i in cells)) cells[i] = typeof initial === 'function' ? initial() : initial;
         return [cells[i], (value) => { cells[i] = typeof value === 'function' ? value(cells[i]) : value; }];
       },
-      useRef(initial) { const i = cursor++; return cells[i] ??= { current: initial }; },
+      useRef(initial) { const i = cursor++; if (!(i in cells)) { cells[i] = { current: initial }; references.push(cells[i]); } return cells[i]; },
       useMemo: (fn) => fn(), useCallback: (fn) => fn, useEffect() {},
     },
   };
 }
 
-function appHarness() {
+function appHarness(os = 'android') {
   const h = hooks();
   let allocations = 0;
   const dependencies = {
     react: h.react,
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': new Proxy({ Platform: { OS: 'android' }, Keyboard: { dismiss() {} }, StyleSheet: { create: (s) => s } }, { get: (obj, key) => obj[key] ?? key }),
+    'react-native': new Proxy({ Platform: { OS: os }, Keyboard: { dismiss() {} }, StyleSheet: { create: (s) => s } }, { get: (obj, key) => obj[key] ?? key }),
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView', useSafeAreaInsets: () => ({ bottom: 0 }) },
     './src/services/chatNavigation': navigation,
+    './src/services/tokenLimits': load('src/services/tokenLimits.ts'),
+    './src/services/webContextUsage': load('src/services/webContextUsage.ts'),
+    './src/theme/controlStyles': load('src/theme/controlStyles.ts'),
     './src/services/chatIds': { createChatId: () => `uuid-${++allocations}` },
     './src/services/models': { models: [{ id: 'model', displayName: 'Model' }] },
     './src/services/localInference': { DEFAULT_INFERENCE_SETTINGS: { contextSize: 1024, maxTokens: 192, reasoningMode: 'off' } },
@@ -98,6 +103,7 @@ function appHarness() {
   return {
     render() { h.begin(); return PhoneGptApp(); },
     allocations: () => allocations,
+    attachMessageList: list => { h.references[0].current = list; },
   };
 }
 const component = (tree, type) => find(tree, (n) => n.type === type || n.type?.name === type);
@@ -243,4 +249,177 @@ test('iOS drawer waits for native dismissal; reopening cancels Android exit noti
   android.render(true);
   android.frame();
   assert.equal(android.exited(), 0);
+});
+
+test('Web toggle shares the model row below the UUID and is absent from the composer', () => {
+  const app = appHarness();
+  component(app.render(), 'WelcomeHome').props.onChat();
+  const tree = app.render();
+  const row = find(tree, node => {
+    const children = [node.props?.children].flat(Infinity);
+    return children.some(child => child?.props?.accessibilityLabel === 'Choose downloaded model')
+      && children.some(child => child?.type === 'WebSearchControls');
+  });
+  assert.ok(row, 'model selector and Web toggle must be siblings');
+  const controls=[];
+  function collect(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'WebSearchControls') controls.push(node);
+    for (const child of [node.props?.children].flat(Infinity)) collect(child);
+  }
+  collect(tree);
+  assert.equal(controls.length,1);
+});
+
+test('chat follows new content until the user scrolls up, then resumes near the bottom', () => {
+  const app=appHarness();
+  component(app.render(),'WelcomeHome').props.onChat();
+  let tree=app.render();
+  component(tree,'ChatHistorySearch').props.onSelect({id:'scroll-chat',messages:Array.from({length:40},(_,i)=>({id:String(i),role:i%2?'assistant':'user',content:'Message '+i}))});
+  tree=app.render();
+  let scrolls=0;
+  app.attachMessageList({scrollToEnd:()=>{scrolls++;}});
+  const list=find(tree,n=>typeof n.props?.onContentSizeChange==='function');
+  const position=y=>({nativeEvent:{contentOffset:{y},contentSize:{height:2000},layoutMeasurement:{height:400}}});
+  list.props.onScroll(position(1600));
+  list.props.onContentSizeChange();
+  assert.equal(scrolls,1,'new content follows by default');
+  list.props.onScrollBeginDrag();
+  list.props.onScroll(position(300));
+  list.props.onContentSizeChange();
+  assert.equal(scrolls,1,'incoming tokens must not pull the reader down');
+  list.props.onScrollEndDrag(position(300));
+  list.props.onContentSizeChange();
+  assert.equal(scrolls,1,'follow stays disabled after releasing the scroll');
+  list.props.onScrollBeginDrag();
+  list.props.onScroll(position(1580));
+  list.props.onScrollEndDrag(position(1580));
+  list.props.onContentSizeChange();
+  assert.equal(scrolls,2,'downward scrolling resumes follow within 24 pixels of the bottom');
+});
+
+const scrollPosition = (y, height = 2000, viewport = 400) => ({
+  nativeEvent: { contentOffset: { y }, contentSize: { height }, layoutMeasurement: { height: viewport } },
+});
+
+function chatScrollHarness(os = 'android') {
+  const app = appHarness(os);
+  component(app.render(), 'WelcomeHome').props.onChat();
+  component(app.render(), 'ChatHistorySearch').props.onSelect({
+    id: 'scroll-regression',
+    messages: Array.from({ length: 40 }, (_, i) => ({ id: String(i), role: i % 2 ? 'assistant' : 'user', content: `Message ${i}` })),
+  });
+  const list = find(app.render(), node => typeof node.props?.onContentSizeChange === 'function').props;
+  const scrolls = [];
+  app.attachMessageList({ scrollToEnd: options => { scrolls.push(options); } });
+  list.onScroll(scrollPosition(1600));
+  return { list, scrolls };
+}
+
+test('web and accessibility scrolling pause and resume follow without native drag callbacks', () => {
+  for (const os of ['web', 'android', 'ios']) {
+    const { list, scrolls } = chatScrollHarness(os);
+    list.onContentSizeChange(400, 2000);
+    assert.equal(scrolls.length, 1, `${os}: starts following`);
+    list.onScroll(scrollPosition(300));
+    list.onContentSizeChange(400, 2000);
+    list.onLayout();
+    assert.equal(scrolls.length, 1, `${os}: incoming content and layout cannot override upward scrolling`);
+    list.onScroll(scrollPosition(1560));
+    list.onContentSizeChange(400, 2000);
+    assert.equal(scrolls.length, 1, `${os}: being 40px from the bottom is insufficient to resume`);
+    list.onScroll(scrollPosition(1580));
+    list.onContentSizeChange(400, 2000);
+    assert.equal(scrolls.length, 2, `${os}: moving down to within 24px resumes follow`);
+  }
+});
+
+test('touch pauses incoming content immediately and releasing or cancelling cannot resume follow', () => {
+  for (const release of ['onTouchEnd', 'onTouchCancel']) {
+    const { list, scrolls } = chatScrollHarness();
+    // Capture a callback before the gesture, as a previously queued follow would.
+    const pendingFollow = list.onContentSizeChange;
+    list.onTouchStart();
+    pendingFollow(400, 2000);
+    list.onLayout();
+    assert.equal(scrolls.length, 0, 'touch wins before the first movement event');
+    list[release]();
+    list.onScroll(scrollPosition(1600));
+    pendingFollow(400, 2000);
+    assert.equal(scrolls.length, 0, 'release at the old bottom does not express downward intent');
+    list.onScroll(scrollPosition(1592));
+    pendingFollow(400, 2000);
+    assert.equal(scrolls.length, 0, 'a tiny upward move stays paused despite being near the bottom');
+    list.onScroll(scrollPosition(1600));
+    pendingFollow(400, 2000);
+    assert.equal(scrolls.length, 1, 'explicit downward movement resumes follow');
+  }
+});
+
+test('drag and momentum never snap a reader back after a tiny upward move near the bottom', () => {
+  const { list, scrolls } = chatScrollHarness();
+  list.onScrollBeginDrag(scrollPosition(1600));
+  list.onContentSizeChange(400, 2000);
+  assert.equal(scrolls.length, 0, 'drag start pauses before any scroll movement');
+  list.onScroll(scrollPosition(1592));
+  list.onScrollEndDrag(scrollPosition(1592));
+  list.onContentSizeChange(400, 2000);
+  assert.equal(scrolls.length, 0, 'releasing 8px from bottom must not resume');
+  list.onMomentumScrollBegin();
+  list.onScroll(scrollPosition(1584));
+  list.onMomentumScrollEnd(scrollPosition(1584));
+  list.onContentSizeChange(400, 2000);
+  assert.equal(scrolls.length, 0, 'momentum end must not snap back either');
+  list.onScrollBeginDrag(scrollPosition(1584));
+  list.onScroll(scrollPosition(1600));
+  list.onScrollEndDrag(scrollPosition(1600));
+  list.onContentSizeChange(400, 2000);
+  assert.equal(scrolls.length, 1, 'moving back down restores follow after the drag');
+});
+
+test('content growth, reflow, viewport changes and programmatic following preserve auto-follow', () => {
+  const { list, scrolls } = chatScrollHarness();
+  list.onScroll(scrollPosition(1600, 2400));
+  list.onContentSizeChange(400, 2400);
+  assert.equal(scrolls.length, 1, 'content growth opens a gap without expressing upward intent');
+  list.onScroll(scrollPosition(2000, 2400));
+  list.onContentSizeChange(400, 2400);
+  assert.equal(scrolls.length, 2, 'the scrollToEnd result keeps following enabled');
+  list.onScroll(scrollPosition(1800, 2200));
+  list.onContentSizeChange(400, 2200);
+  assert.equal(scrolls.length, 3, 'reflow can move the offset upward without pausing follow');
+  list.onScroll(scrollPosition(1700, 2200, 500));
+  list.onLayout();
+  assert.equal(scrolls.length, 4, 'viewport resizing can move the offset upward without pausing follow');
+  assert.ok(scrolls.every(options => options.animated === false), 'stream following stays non-animated');
+});
+
+test('content growth and layout at the bottom cannot re-enable a paused reader', () => {
+  const { list, scrolls } = chatScrollHarness();
+  list.onScroll(scrollPosition(1592));
+  list.onScroll(scrollPosition(1592, 2400));
+  list.onContentSizeChange(400, 2400);
+  list.onScroll(scrollPosition(1592, 1992));
+  list.onLayout();
+  list.onContentSizeChange(400, 1992);
+  assert.equal(scrolls.length, 0, 'layout closing the gap cannot substitute for downward movement');
+});
+
+test('web upward wheel and keyboard intent pause before scroll position changes', () => {
+  for (const interrupt of [
+    list => list.onWheel({ nativeEvent: { deltaY: -10 } }),
+    list => list.onWheel({ deltaY: -10 }),
+    ...['ArrowUp', 'PageUp', 'Home'].map(key => list => list.onKeyDown({ key })),
+  ]) {
+    const { list, scrolls } = chatScrollHarness('web');
+    const pendingFollow = list.onLayout;
+    interrupt(list);
+    pendingFollow();
+    list.onContentSizeChange(400, 2000);
+    assert.equal(scrolls.length, 0, 'upward intent wins over a pending follow before onScroll arrives');
+    list.onScroll(scrollPosition(1400));
+    list.onScroll(scrollPosition(1600));
+    list.onContentSizeChange(400, 2000);
+    assert.equal(scrolls.length, 1, 'scrolling down restores follow after web input');
+  }
 });

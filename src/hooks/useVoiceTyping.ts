@@ -1,10 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, DeviceEventEmitter } from 'react-native';
+import { Alert, AppState, DeviceEventEmitter, Platform } from 'react-native';
 import type { WhisperContext } from 'whisper.rn/index';
 import { getInstalledModelPath, getModelDownloadState } from '../services/models';
-import { createVoiceContext, getVoiceRecorder, requestMicrophonePermission, voiceModels, type Recorder } from '../services/voice';
+import { cleanTranscript, createVoiceContext, getVoiceRecorder, requestMicrophonePermission, voiceModels, type Recorder } from '../services/voice';
 import { VOICE_TRANSCRIPTION_MODE, type VoiceTranscriptionMode } from '../config/voice';
 import { LiveTranscription } from '../services/liveTranscription';
 
@@ -31,7 +31,8 @@ export function useVoiceTyping(chatKey: string, onTranscript: (text: string, liv
     setAudioLevel(0);
     if (status !== 'recording') return;
     let lastSample = 0;
-    const subscription = DeviceEventEmitter.addListener('PhoneGptAudioLevel', (event: { level?: number }) => {
+    const emitter = Platform?.OS === 'ios' ? getVoiceRecorder() : DeviceEventEmitter;
+    const subscription = emitter.addListener?.('PhoneGptAudioLevel', (event: { level?: number }) => {
       if (phase.current !== 'recording') return;
       const level = event?.level;
       if (typeof level !== 'number' || !Number.isFinite(level)) return;
@@ -41,7 +42,7 @@ export function useVoiceTyping(chatKey: string, onTranscript: (text: string, liv
     const timer = setInterval(() => {
       if (Date.now() - lastSample > 350) setAudioLevel(0);
     }, 100);
-    return () => { subscription.remove(); clearInterval(timer); };
+    return () => { subscription?.remove(); clearInterval(timer); };
   }, [status]);
   const changeStatus = useCallback((next: Status) => { phase.current = next; if (mounted.current) setStatus(next); }, []);
   const clear = useCallback(async (current: Session) => {
@@ -101,7 +102,7 @@ export function useVoiceTyping(chatKey: string, onTranscript: (text: string, liv
       current.stop = task.stop;
       const result = await task.promise;
       if (!current.cancelled && mounted.current && latestChatKey.current === current.chatKey && !result.isAborted) {
-        const text = result.result.trim();
+        const text = cleanTranscript(result.result);
         if (text) onText.current(text);
         else Alert.alert('No speech detected', 'Please try recording again.');
       }
@@ -138,7 +139,8 @@ export function useVoiceTyping(chatKey: string, onTranscript: (text: string, liv
         current.live = new LiveTranscription({
           context: current.context, recorder: current.recorder, uri: current.uri,
           onText: (text) => {
-            if (!current.cancelled && mounted.current && latestChatKey.current === current.chatKey) onText.current(text, current.liveId);
+            const cleaned = cleanTranscript(text);
+            if (cleaned && !current.cancelled && session.current === current && mounted.current && latestChatKey.current === current.chatKey) onText.current(cleaned, current.liveId);
           },
           onError: (error) => {
             if (!current.cancelled && mounted.current) Alert.alert('Live transcription failed', error instanceof Error ? error.message : 'Please try again.');

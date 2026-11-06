@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View } from 'react-native';
 import type { NativeScrollEvent, NativeSyntheticEvent, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DEFAULT_INFERENCE_SETTINGS, GenerationStoppedError, generateLocalReply, getContextTokenCount, getInputTokenCount, loadLocalModel, unloadLocalModel, type ContextSize, type InferenceSettings, type ReasoningMode } from './src/services/localInference';
+import { DEFAULT_INFERENCE_SETTINGS, GenerationStoppedError, generateLocalReply, effectiveSystemPrompt, shouldSearchWithLocalModel, getContextTokenCount, getTextTokenCount, getInputTokenCount, loadLocalModel, unloadLocalModel, type InferenceSettings, type ReasoningMode } from './src/services/localInference';
 import { cancelModelDownload, deleteInstalledModel, downloadModel, formatBytes, getInstalledModelPath, getModelDownloadState, ModelDownloadCancelledError, models, type ModelDefinition, type ModelDownloadState } from './src/services/models';
 import { MessageContent } from './src/components/MessageContent';
 import { AppIcon } from './src/components/AppIcon';
@@ -33,23 +33,36 @@ import { DownloadControls } from './src/components/DownloadControls';
 import { NewChatButton } from './src/components/NewChatButton';
 import { DeleteChatButton } from './src/components/DeleteChatButton';
 import { removeChatFiles } from './src/services/deleteChat';
+import { ChatExport } from './src/components/ChatExport';
 import { ChatHistorySearch } from './src/components/ChatHistorySearch';
+import { TokenLimitControl } from './src/components/TokenLimitControl';
+import { availableReplyTokens, MIN_CONTEXT_TOKENS, MIN_REPLY_TOKENS, UNKNOWN_CONTEXT_LIMIT, normalizeTokenSettings, replyLimit } from './src/services/tokenLimits';
+import { WEB_SEARCH_FEATURE_ENABLED, restoreWebPreference } from './src/config/webSearch';
+import { classifyWebQuery, explicitlyRequestsWebSearch, searchWeb } from './src/services/webSearch';
+import { validateWebCitationMarkers } from './src/services/webCitations';
+import { fitWebEvidence } from './src/services/webGrounding';
+import type { WebSearchProvenance } from './src/services/webSearchTypes';
+import { WebSearchControls } from './src/components/WebSearchControls';
+import { WebSources } from './src/components/WebSources';
+import { resolveWebUsage, webUsageTotal, type WebContextUsage, type WebTurnUsage } from './src/services/webContextUsage';
+import { WebSearchOverlay } from './src/components/WebSearchOverlay';
+import { CONTROL, controlSurface } from './src/theme/controlStyles';
 import { SettingsContent } from './src/components/SettingsContent';
 import { ActionButton, DownloadStatus } from './src/components/UiKit';
 import { ScaledText as Text, ScaledTextInput } from './src/components/ScaledText';
 
 type Screen = 'home' | 'chat' | 'models' | 'settings' | 'info';
 type Role = 'user' | 'assistant';
-type Message = { id: string; role: Role; content: string; attachments?: TextAttachment[] };
+type Message = { id: string; role: Role; content: string; attachments?: TextAttachment[]; web?: WebSearchProvenance; contextUsage?: WebContextUsage };
 type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; origin?: 'dev' | 'production' };
 type ModelStatus = 'checking' | 'paused' | 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
 
-const APP_VERSION = 'v0.5.0';
+const APP_VERSION = 'v0.5.8';
 const MODEL_GROUPS = groupModelsByProvider(models);
 const STORAGE_KEY = '@phone-gpt/chats';
 const INFERENCE_SETTINGS_KEY = '@phone-gpt/inference-settings';
-const OUTPUT_TOKEN_OPTIONS: InferenceSettings['maxTokens'][] = [192, 384, 512, 768];
-const CONTEXT_SIZE_OPTIONS: ContextSize[] = [1024, 2048, 4096];
+const WEB_PREFERENCE_KEY = '@phone-gpt/web-search-enabled';
+const WEB_DISCLOSURE_KEY = '@phone-gpt/web-search-disclosure-v1';
 const REASONING_OPTIONS: { value: ReasoningMode; label: string }[] = [
   { value: 'off', label: 'Off' },
   { value: 'short', label: 'Short' },
@@ -69,6 +82,7 @@ function PhoneGptApp() {
   const messageListRef = useRef<ScrollView>(null);
   const followLatest = useRef(true);
   const readingWithGesture = useRef(false);
+  const lastScrollGeometry = useRef<{ y: number; height: number; viewport: number } | null>(null);
   const messageInputRef = useRef<TextInput>(null);
   const refocusAfterGeneration = useRef(false);
   const selectedModelRef = useRef<ModelDefinition>(models[0]);
@@ -78,6 +92,8 @@ function PhoneGptApp() {
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const pendingSearch = useRef(false);
+  const pendingExport = useRef(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const switchingChatModel = useRef(false);
   const [isSwitchingChatModel, setIsSwitchingChatModel] = useState(false);
   const [screen, setScreen] = useState<Screen>('home');
@@ -118,11 +134,45 @@ function PhoneGptApp() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const generationInFlight = useRef(false);
+  const webRequestActive = useRef(false);
   const generationAbort = useRef<AbortController | null>(null);
   const [isStopping, setIsStopping] = useState(false);
+  const [webEnabled, setWebEnabled] = useState(false);
+  const [webPreferenceReady, setWebPreferenceReady] = useState(false);
+  const [webDisclosureSeen, setWebDisclosureSeen] = useState(false);
+  const webDisclosureShowing = useRef(false);
+  const [webPhase, setWebPhase] = useState<'idle' | 'deciding' | 'searching' | 'generating'>('idle');
+  useEffect(() => {
+    let active = true;
+    if (!WEB_SEARCH_FEATURE_ENABLED) { setWebPreferenceReady(true); return; }
+    Promise.all([AsyncStorage.getItem(WEB_PREFERENCE_KEY), AsyncStorage.getItem(WEB_DISCLOSURE_KEY)]).then(([value, seen]) => {
+      if (active) { setWebEnabled(restoreWebPreference(value)); setWebDisclosureSeen(seen === 'true'); }
+    }).catch(() => undefined).finally(() => { if (active) setWebPreferenceReady(true); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!WEB_SEARCH_FEATURE_ENABLED || !webPreferenceReady || !webEnabled || webDisclosureSeen || screen !== 'chat' || webDisclosureShowing.current) return;
+    webDisclosureShowing.current = true;
+    Alert.alert('Web search', 'Search queries are sent online. Replies are generated on your phone. You can turn Web off at any time.', [{
+      text: 'Got it', onPress: () => {
+        setWebDisclosureSeen(true);
+        // Keep the notice dismissed for this session even if storage is unavailable.
+        void AsyncStorage.setItem(WEB_DISCLOSURE_KEY, 'true').catch(() => undefined);
+        webDisclosureShowing.current = false;
+      },
+    }], { cancelable: false });
+  }, [webPreferenceReady, webEnabled, webDisclosureSeen, screen]);
+  const toggleWebSearch = () => {
+    if (!WEB_SEARCH_FEATURE_ENABLED || !webPreferenceReady || generationInFlight.current) return;
+    const enabled = !webEnabled;
+    AsyncStorage.setItem(WEB_PREFERENCE_KEY, String(enabled)).then(() => setWebEnabled(enabled)).catch(() => Alert.alert('Could not save search preference', 'Please try again.'));
+  };
   const [streamingReply, setStreamingReply] = useState<{ chatId: string; message: Message } | null>(null);
   const [inferenceSettings, setInferenceSettings] = useState<InferenceSettings>(DEFAULT_INFERENCE_SETTINGS);
   const [contextTokens, setContextTokens] = useState(0);
+  const [webTurnUsage, setWebTurnUsage] = useState<WebTurnUsage | null>(null);
+  const [modelLimits, setModelLimits] = useState<{ modelId: string; maxContextTokens: number | null } | null>(null);
+  const [inferenceSettingsReady, setInferenceSettingsReady] = useState(false);
   const voice = useVoiceTyping(`${screen}:${drawerOpen}:${currentChat?.id ?? draftChatId}`, (text, liveId) => {
     const next = liveId ? liveDraft.current.update(draftRef.current, liveId, text) : appendTranscript(draftRef.current, text);
     draftRef.current = next;
@@ -132,32 +182,54 @@ function PhoneGptApp() {
   useEffect(() => {
     if (screen === 'models') setExpandedModelId('');
   }, [screen]);
+  // Fast Refresh can retain a loaded selection removed by a rollout flag.
+  useEffect(() => {
+    if (models.some(model => model.id === selectedModel.id)) return;
+    generationAbort.current?.abort();
+    selectedModelRef.current = models[0];
+    setSelectedModel(models[0]);
+    setModelStatus('checking');
+    setModelPath(null);
+    void unloadLocalModel().catch(() => undefined);
+  }, [selectedModel.id]);
   // Async recovery must never replace a user operation or an active context.
   const recoveryRevision = useRef(0);
   const liveModelState = useRef({ modelStatus, isGenerating });
   liveModelState.current = { modelStatus, isGenerating };
 
-  const closeDrawer = () => { pendingSearch.current = false; setDrawerOpen(false); };
-  const openDrawer = () => { pendingSearch.current = false; setDrawerOpen(true); };
+  const closeDrawer = () => { pendingExport.current = false; pendingSearch.current = false; setDrawerOpen(false); };
+  const openDrawer = () => { pendingExport.current = false; pendingSearch.current = false; setDrawerOpen(true); };
   const openHistorySearch = () => {
     if (isGenerating || voice.busy || isPickingFile) return;
     Keyboard.dismiss();
     refocusAfterGeneration.current = false;
+    if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort();
     setModelSelectorOpen(false);
+    pendingExport.current = false;
     pendingSearch.current = true;
     setDrawerOpen(false);
   };
+  const openChatExport = () => {
+    if (isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded) return;
+    Keyboard.dismiss();
+    pendingSearch.current = false;
+    pendingExport.current = true;
+    setDrawerOpen(false);
+  };
   const onDrawerExited = () => {
+    if (pendingExport.current) { pendingExport.current = false; setExportOpen(true); return; }
     if (!pendingSearch.current) return;
     pendingSearch.current = false;
     setSearchOpen(true);
   };
 
   const handleBackPress = useCallback(() => {
+    if (pendingExport.current) { pendingExport.current = false; return true; }
     if (pendingSearch.current) { pendingSearch.current = false; return true; }
     if (searchOpen) { setSearchOpen(false); return true; }
     if (modelSelectorOpen) { setModelSelectorOpen(false); return true; }
     if (!drawerOpen && screen === 'home') return false;
+    if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort();
     Keyboard.dismiss();
     refocusAfterGeneration.current = false;
     if (drawerOpen) {
@@ -194,13 +266,16 @@ function PhoneGptApp() {
 
   useEffect(() => {
     AsyncStorage.getItem(INFERENCE_SETTINGS_KEY)
-      .then((savedSettings) => { if (savedSettings) setInferenceSettings({ ...DEFAULT_INFERENCE_SETTINGS, ...(JSON.parse(savedSettings) as Partial<InferenceSettings>) }); })
-      .catch(() => undefined);
+      .then((savedSettings) => { if (savedSettings) {
+        const saved = JSON.parse(savedSettings);
+        setInferenceSettings(normalizeTokenSettings({ ...DEFAULT_INFERENCE_SETTINGS, ...saved, reasoningMode: ['off', 'short', 'extended'].includes(saved.reasoningMode) ? saved.reasoningMode : 'off' }, Number.MAX_SAFE_INTEGER));
+      } })
+      .catch(() => undefined).finally(() => setInferenceSettingsReady(true));
   }, []);
 
   useEffect(() => {
-    AsyncStorage.setItem(INFERENCE_SETTINGS_KEY, JSON.stringify(inferenceSettings)).catch(() => undefined);
-  }, [inferenceSettings]);
+    if (inferenceSettingsReady) AsyncStorage.setItem(INFERENCE_SETTINGS_KEY, JSON.stringify(inferenceSettings)).catch(() => undefined);
+  }, [inferenceSettings, inferenceSettingsReady]);
 
   useEffect(() => {
     let active = true;
@@ -283,14 +358,28 @@ function PhoneGptApp() {
 
   const updateScrollPosition = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    // Only user scroll events change follow mode; new streamed text increases
-    // content height without expressing any intent to stop following it.
-    followLatest.current = contentSize.height - layoutMeasurement.height - contentOffset.y <= 64;
+    const next = { y: contentOffset.y, height: contentSize.height, viewport: layoutMeasurement.height };
+    const previous = lastScrollGeometry.current;
+    lastScrollGeometry.current = next;
+    const gap = Math.max(0, next.height - next.viewport - next.y);
+    // Layout/markdown/keyboard changes can move the offset without user intent.
+    // Wheel and accessibility scrolling, however, may never emit native drag events.
+    const stableLayout = previous && Math.abs(next.height - previous.height) <= 1 && Math.abs(next.viewport - previous.viewport) <= 1;
+    if (previous && (stableLayout || readingWithGesture.current)) {
+      if (next.y < previous.y - 1) followLatest.current = false;
+      else if (next.y > previous.y + 1 && gap <= 24) followLatest.current = true;
+    }
+    if (readingWithGesture.current && gap > 24) followLatest.current = false;
+  }, []);
+  const pauseFollowing = useCallback(() => {
+    readingWithGesture.current = true;
+    followLatest.current = false;
   }, []);
 
   useEffect(() => {
     followLatest.current = true;
     readingWithGesture.current = false;
+    lastScrollGeometry.current = null;
     const frame = requestAnimationFrame(scrollToLatest);
     return () => cancelAnimationFrame(frame);
   }, [currentChat?.id, scrollToLatest]);
@@ -312,7 +401,11 @@ function PhoneGptApp() {
     return () => { active = false; };
   }, [currentChat?.messages, modelStatus]);
 
-  const go = (next: Screen) => { pendingSearch.current = false; setSearchOpen(false); setModelSelectorOpen(false); setScreen(next); setDrawerOpen(false); };
+  useEffect(() => {
+    return () => { if (WEB_SEARCH_FEATURE_ENABLED) generationAbort.current?.abort(); };
+  }, []);
+
+  const go = (next: Screen) => { if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort(); pendingExport.current = false; pendingSearch.current = false; setExportOpen(false); setSearchOpen(false); setModelSelectorOpen(false); setScreen(next); setDrawerOpen(false); };
   const newChat = () => {
     if (isGenerating || voice.busy || isSwitchingChatModel || isPickingFile) return;
     const state = { currentChat, draftChatId, message, attachedText };
@@ -390,8 +483,10 @@ function PhoneGptApp() {
       setModelError(null);
     }
     try {
-      await loadLocalModel(model, path, contextSize, (progress) => { if (isStillSelected()) setModelProgress(progress); });
+      const limits = await loadLocalModel(model, path, contextSize, (progress) => { if (isStillSelected()) setModelProgress(progress); });
       if (isStillSelected()) {
+        setModelLimits({ modelId: model.id, maxContextTokens: limits.maxContextTokens });
+        setInferenceSettings(current => normalizeTokenSettings({ ...current, contextSize: limits.contextSize }, limits.maxContextTokens ?? UNKNOWN_CONTEXT_LIMIT));
         lastLoaded.remember(model);
         setModelStatus('ready');
         setModelProgress(1);
@@ -537,21 +632,26 @@ function PhoneGptApp() {
   const send = async () => {
     const submittedDraft = message;
     const cleanMessage = submittedDraft.trim();
+    const useWebForTurn = WEB_SEARCH_FEATURE_ENABLED && webPreferenceReady && (webEnabled || explicitlyRequestsWebSearch(cleanMessage));
     if ((!cleanMessage && !attachedText) || chatDeletionInFlight.current || generationInFlight.current || voice.isActive() || voice.busy || isGenerating || isPickingFile || switchingChatModel.current || !promptSettings.ready) return;
     if (modelStatus !== 'ready') {
       Alert.alert('Model not ready', 'Choose a downloaded model above, or download one from Menu → Models.');
       return;
     }
     generationInFlight.current = true;
+    webRequestActive.current = useWebForTurn;
     const controller = new AbortController();
     generationAbort.current = controller;
     setIsStopping(false);
     setIsGenerating(true);
     const finishGeneration = () => {
       generationInFlight.current = false;
+      webRequestActive.current = false;
       if (generationAbort.current === controller) generationAbort.current = null;
       setIsStopping(false);
       setIsGenerating(false);
+      setWebPhase('idle');
+      setWebTurnUsage(null);
     };
 
     const userMessage: Message = { id: `${Date.now()}-user`, role: 'user', content: cleanMessage, ...(attachedText ? { attachments: [attachedText] } : {}) };
@@ -559,16 +659,19 @@ function PhoneGptApp() {
       ? { ...currentChat, messages: [...currentChat.messages, userMessage] }
       : { id: draftChatId, title: draftChatId, messages: [userMessage], createdAt: Date.now(), systemPrompt: promptSettings.savedPrompt, origin: __DEV__ ? 'dev' : 'production' };
 
-    // Validate hidden prompts and files without saving an oversized request.
-    if (attachedText || nextChat.systemPrompt?.trim()) {
+    let turnSettings = inferenceSettings;
+    // Count every input, including the hidden prompt and attached file content.
+    {
       try {
         const tokens = await getInputTokenCount(await messagesForInference(nextChat.messages), inferenceSettings, nextChat.systemPrompt);
         if (controller.signal.aborted) { finishGeneration(); return; }
-        if (tokens + inferenceSettings.maxTokens + 192 > inferenceSettings.contextSize) {
+        const maxTokens = availableReplyTokens(inferenceSettings.contextSize, tokens, inferenceSettings.maxTokens);
+        if (maxTokens < 1) {
           Alert.alert('Message exceeds available context', 'Use a shorter system prompt or file, start a fresh chat, or increase Conversation context in Models.');
           finishGeneration();
           return;
         }
+        turnSettings = { ...inferenceSettings, maxTokens };
         if (attachedText) userMessage.attachments = [await persistTextAttachment(attachedText, nextChat.id, userMessage.id)];
       } catch (error) {
         if (controller.signal.aborted) { finishGeneration(); return; }
@@ -588,36 +691,68 @@ function PhoneGptApp() {
     setAttachedText(null);
     // Sending is an explicit request to return to the newest message. Do not
     // depend only on content-height changes (or an earlier drag's follow flag).
-    requestAnimationFrame(() => {
-      followLatest.current = true;
-      readingWithGesture.current = false;
-      messageListRef.current?.scrollToEnd({ animated: false });
-    });
+    // A gesture after Send wins over this queued frame.
+    requestAnimationFrame(scrollToLatest);
     setIsGenerating(true);
     const assistantId = `${Date.now()}-assistant`;
     let partialReply = '';
+    let webProvenance: WebSearchProvenance | undefined;
+    let webUsage: WebContextUsage | undefined;
+    const usageFields = () => webUsage ? { contextUsage: { ...webUsage } } : {};
     let streamTimer: ReturnType<typeof setTimeout> | undefined;
     const publishReply = () => {
       streamTimer = undefined;
-      setStreamingReply({ chatId: nextChat.id, message: { id: assistantId, role: 'assistant', content: partialReply } });
+      if (webUsage) {
+        // Streaming is approximate; re-tokenize the final reply after native generation settles.
+        webUsage.outputTokens = Math.ceil(partialReply.length / 4);
+        setWebTurnUsage({ chatId: nextChat.id, userId: userMessage.id, usage: { ...webUsage } });
+      }
+      setStreamingReply({ chatId: nextChat.id, message: { id: assistantId, role: 'assistant', content: partialReply, ...usageFields(), ...(webProvenance ? { web: webProvenance } : {}) } });
     };
     try {
       // `nextChat.messages` is the full transcript for this one chat. It is
       // persisted as JSON in AsyncStorage and sent again with every new turn.
-      const conversationForModel = await messagesForInference(nextChat.messages);
-      const response = await generateLocalReply(conversationForModel, inferenceSettings, nextChat.systemPrompt, (text) => {
+      let conversationForModel = await messagesForInference(nextChat.messages);
+      let turnPrompt = nextChat.systemPrompt;
+      if (useWebForTurn && cleanMessage) {
+        setWebPhase('deciding');
+        const decision = classifyWebQuery(cleanMessage);
+        const needsSearch = decision === 'search' || (decision === 'ask-model' && await shouldSearchWithLocalModel(cleanMessage, turnSettings, controller.signal));
+        if (controller.signal.aborted) throw new GenerationStoppedError('');
+        if (needsSearch) {
+          setWebPhase('searching');
+          const result = await searchWeb(cleanMessage, { signal: controller.signal });
+          const baselineTokens = await getInputTokenCount(conversationForModel, inferenceSettings, turnPrompt);
+          const grounded = await fitWebEvidence(conversationForModel, result, inferenceSettings, effectiveSystemPrompt(inferenceSettings, nextChat.systemPrompt), getInputTokenCount, controller.signal);
+          if (controller.signal.aborted) throw new GenerationStoppedError('');
+          conversationForModel = grounded.messages;
+          turnPrompt = grounded.systemPrompt;
+          webProvenance = grounded.provenance;
+          const inputTokens = await getInputTokenCount(conversationForModel, inferenceSettings, turnPrompt);
+          if (controller.signal.aborted) throw new GenerationStoppedError('');
+          webUsage = { modelId: selectedModel.id, contextSize: inferenceSettings.contextSize, inputTokens, evidenceTokens: Math.max(0, inputTokens - baselineTokens), outputTokens: 0 };
+          setWebTurnUsage({ chatId: nextChat.id, userId: userMessage.id, usage: { ...webUsage } });
+          const maxTokens = availableReplyTokens(inferenceSettings.contextSize, inputTokens, inferenceSettings.maxTokens);
+          if (maxTokens < 1) throw new Error('There is not enough conversation space for search results. Start a new chat or increase the conversation context.');
+          turnSettings = { ...inferenceSettings, maxTokens };
+        }
+      }
+      setWebPhase('generating');
+      const response = await generateLocalReply(conversationForModel, turnSettings, turnPrompt, (text) => {
         const firstChunk = !partialReply;
-        partialReply = text;
+        partialReply = webProvenance ? validateWebCitationMarkers(text, webProvenance) : text;
         // Show the first chunk immediately; batch subsequent native events so
         // markdown layout remains responsive without writing storage per token.
         if (firstChunk) publishReply();
         else if (!streamTimer) streamTimer = setTimeout(publishReply, 50);
       }, controller.signal);
-      saveChat({ ...nextChat, messages: [...nextChat.messages, { id: assistantId, role: 'assistant', content: response }] }, false);
+      if (webUsage) webUsage.outputTokens = await getTextTokenCount(response).catch(() => Math.ceil(response.length / 4));
+      saveChat({ ...nextChat, messages: [...nextChat.messages, { id: assistantId, role: 'assistant', ...usageFields(), content: webProvenance ? validateWebCitationMarkers(response, webProvenance) : response, ...(webProvenance ? { web: webProvenance } : {}) }] }, false);
     } catch (error) {
       if (error instanceof GenerationStoppedError || controller.signal.aborted) {
-        const text = (error instanceof GenerationStoppedError ? error.partialText : '') || partialReply;
-        saveChat({ ...nextChat, messages: [...nextChat.messages, ...(text ? [{ id: assistantId, role: 'assistant' as const, content: text }] : [])] }, false);
+        const rawText = (error instanceof GenerationStoppedError ? error.partialText : '') || partialReply;
+        const text = webProvenance ? validateWebCitationMarkers(rawText, webProvenance) : rawText;
+        saveChat({ ...nextChat, messages: [...nextChat.messages, ...(text ? [{ id: assistantId, role: 'assistant' as const, content: text, ...usageFields(), ...(webProvenance ? { web: webProvenance } : {}) }] : [])] }, false);
         return;
       }
       const reason = error instanceof Error ? error.message : 'Unknown local inference error.';
@@ -641,24 +776,25 @@ function PhoneGptApp() {
     return <Text accessibilityLiveRegion="polite" style={styles.modelStatus}>Checking this device…</Text>;
   };
 
-  const inferenceControlsDisabled = voice.busy || isGenerating || isSwitchingChatModel || modelStatus === 'loading' || modelStatus === 'checking';
+  const knownContextLimit = modelLimits?.modelId === selectedModel.id ? modelLimits.maxContextTokens : null;
+  const contextLimit = knownContextLimit ?? Math.max(UNKNOWN_CONTEXT_LIMIT, inferenceSettings.contextSize);
+  const inferenceControlsDisabled = !inferenceSettingsReady || voice.busy || isGenerating || isSwitchingChatModel || modelStatus === 'loading' || modelStatus === 'checking';
   const modelControls = <View style={styles.modelControls}>
     <Text style={styles.controlLabel}>Reasoning</Text>
     <Text style={styles.controlHint}>How much thinking to request. Support varies by model.</Text>
     <View style={styles.choiceRow}>{REASONING_OPTIONS.map((option) => <Pressable key={option.value} accessibilityRole="button" accessibilityState={{ selected: inferenceSettings.reasoningMode === option.value, disabled: inferenceControlsDisabled }} disabled={inferenceControlsDisabled} onPress={() => setInferenceSettings((current) => ({ ...current, reasoningMode: option.value }))} style={[styles.choiceButton, inferenceControlsDisabled && { opacity: 0.5 }, inferenceSettings.reasoningMode === option.value && styles.choiceButtonActive]}><Text style={[styles.choiceText, inferenceSettings.reasoningMode === option.value && styles.choiceTextActive]}>{option.label}</Text></Pressable>)}</View>
-    <Text style={styles.controlLabel}>Maximum reply length</Text>
-    <Text style={styles.controlHint}>Measured in tokens, not words. Longer replies take more time.</Text>
-    <View style={styles.choiceRow}>{OUTPUT_TOKEN_OPTIONS.map((tokens) => <Pressable key={tokens} accessibilityRole="button" accessibilityLabel={`${tokens} reply tokens`} accessibilityState={{ selected: inferenceSettings.maxTokens === tokens, disabled: inferenceControlsDisabled }} disabled={inferenceControlsDisabled} onPress={() => setInferenceSettings((current) => ({ ...current, maxTokens: tokens }))} style={[styles.choiceButton, inferenceControlsDisabled && { opacity: 0.5 }, inferenceSettings.maxTokens === tokens && styles.choiceButtonActive]}><Text style={[styles.choiceText, inferenceSettings.maxTokens === tokens && styles.choiceTextActive]}>{tokens}</Text></Pressable>)}</View>
-    <Text style={styles.controlLabel}>Conversation context</Text>
-    <View style={styles.choiceRow}>{CONTEXT_SIZE_OPTIONS.map((tokens) => <Pressable key={tokens} accessibilityRole="button" accessibilityLabel={`${tokens} context tokens`} accessibilityState={{ selected: inferenceSettings.contextSize === tokens, disabled: inferenceControlsDisabled }} disabled={inferenceControlsDisabled} onPress={() => {
-      setInferenceSettings((current) => ({ ...current, contextSize: tokens }));
-      if (modelPath && modelStatus === 'ready') void loadModel(selectedModel, modelPath, tokens);
-    }} style={[styles.choiceButton, inferenceControlsDisabled && { opacity: 0.5 }, inferenceSettings.contextSize === tokens && styles.choiceButtonActive]}><Text style={[styles.choiceText, inferenceSettings.contextSize === tokens && styles.choiceTextActive]}>{tokens}</Text></Pressable>)}</View>
-    <Text style={styles.controlHint}>Context is the chat the model can remember at once. Changing it reloads the model. Larger windows use more phone memory.</Text>
+    <TokenLimitControl label="Maximum reply length" value={inferenceSettings.maxTokens} min={MIN_REPLY_TOKENS} max={replyLimit(inferenceSettings.contextSize)} presets={[384, 512, 768]} disabled={inferenceControlsDisabled} onChange={maxTokens => setInferenceSettings(current => ({ ...current, maxTokens }))} />
+    <Text style={styles.controlHint}>A maximum, not a target. Replies can end earlier. The reply shares the context window with your prompt and messages; available space can shorten it.</Text>
+    <TokenLimitControl label="Conversation context" value={inferenceSettings.contextSize} min={MIN_CONTEXT_TOKENS} max={contextLimit} presets={[2048, 4096, 10000, 20000, 32768]} disabled={inferenceControlsDisabled} onChange={contextSize => {
+      setInferenceSettings(current => normalizeTokenSettings({ ...current, contextSize }, contextLimit));
+      if (modelPath && modelStatus === 'ready') void loadModel(selectedModel, modelPath, contextSize);
+    }} />
+    <Text style={styles.controlHint}>{knownContextLimit ? `Model context limit: ${knownContextLimit.toLocaleString()} tokens.` : 'Model limit unavailable: up to 32,768 tokens can be requested; support is unverified until model metadata is read.'} Changing context reloads the model. Larger windows need more phone memory and may fail to load. Reducing context also reduces an oversized reply limit.</Text>
     {inferenceControlsDisabled && <Text accessibilityLiveRegion="polite" style={styles.controlHint}>Options are available when the model finishes its current task.</Text>}
   </View>;
 
-  const usedContextTokens = Math.min(inferenceSettings.contextSize, contextTokens);
+  const currentWebUsage = resolveWebUsage(currentChat, webTurnUsage, selectedModel.id, inferenceSettings.contextSize);
+  const usedContextTokens = Math.min(inferenceSettings.contextSize, currentWebUsage ? webUsageTotal(currentWebUsage) : contextTokens);
   const contextPercent = Math.min(100, Math.round((usedContextTokens / inferenceSettings.contextSize) * 100));
   const visibleMessages = currentChat
     ? [...currentChat.messages, ...(streamingReply?.chatId === currentChat.id ? [streamingReply.message] : [])]
@@ -670,7 +806,7 @@ function PhoneGptApp() {
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         {screen === 'home' && <SimpleScreen title={__DEV__ ? 'PhoneGPT Dev' : 'PhoneGPT'} onMenu={openDrawer}><WelcomeHome version={APP_VERSION} onChat={() => go('chat')} onModels={() => go('models')} /></SimpleScreen>}
         {screen === 'chat' && <View style={styles.screen} aria-hidden={searchOpen} accessibilityElementsHidden={searchOpen} importantForAccessibility={searchOpen ? 'no-hide-descendants' : 'auto'}>
-          <View style={styles.topBar}><Pressable accessibilityRole="button" accessibilityLabel="Open menu" hitSlop={10} onPress={() => { setModelSelectorOpen(false); openDrawer(); }} style={styles.iconButton}><AppIcon name="menu" color={colors.text} /></Pressable><View style={{ flex: 1, minWidth: 0, paddingVertical: 8 }}><Text selectable style={{ color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 }}>{currentChat?.id ?? draftChatId}</Text><Pressable accessibilityRole="button" accessibilityLabel="Choose downloaded model" accessibilityState={{ expanded: modelSelectorOpen, disabled: voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel }} disabled={voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel} onPress={() => { Keyboard.dismiss(); setModelSelectorOpen((open) => !open); }} style={{ minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, borderRadius: 10, backgroundColor: colors.raised, opacity: voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel ? 0.5 : 1 }}><Text numberOfLines={1} style={{ color: colors.secondary, fontSize: 12, flexShrink: 1 }}>{modelStatus === 'ready' ? selectedModel.displayName : modelStatus === 'loading' || isSwitchingChatModel ? `Loading ${selectedModel.displayName}…` : 'Choose downloaded model'}</Text><View style={{ transform: [{ rotate: modelSelectorOpen ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.secondary} size={15} /></View></Pressable></View><NewChatButton onPress={newChat} disabled={isGenerating || voice.busy || isSwitchingChatModel} /></View>
+          <View style={styles.topBar}><Pressable accessibilityRole="button" accessibilityLabel="Open menu" hitSlop={10} onPress={() => { setModelSelectorOpen(false); openDrawer(); }} style={styles.iconButton}><AppIcon name="menu" color={colors.text} /></Pressable><View style={{ flex: 1, minWidth: 0, paddingVertical: 8 }}><Text selectable style={{ color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 }}>{currentChat?.id ?? draftChatId}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 }}><Pressable accessibilityRole="button" accessibilityLabel="Choose downloaded model" accessibilityState={{ expanded: modelSelectorOpen, disabled: voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel }} disabled={voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel} onPress={() => { Keyboard.dismiss(); setModelSelectorOpen((open) => !open); }} style={({ pressed }) => [controlSurface(colors, voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel, pressed), { flexShrink: 1, minWidth: 0 }]} ><Text numberOfLines={1} style={{ color: colors.secondary, ...CONTROL.compactLabel, flexShrink: 1 }}>{modelStatus === 'ready' ? selectedModel.displayName : modelStatus === 'loading' || isSwitchingChatModel ? `Loading ${selectedModel.displayName}…` : 'Choose downloaded model'}</Text><View style={{ transform: [{ rotate: modelSelectorOpen ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.secondary} size={15} /></View></Pressable>{WEB_SEARCH_FEATURE_ENABLED && <WebSearchControls enabled={webEnabled} onToggle={toggleWebSearch} disabled={!webPreferenceReady || isGenerating || voice.busy} />}</View></View><NewChatButton onPress={newChat} disabled={isGenerating || voice.busy || isSwitchingChatModel} /></View>
           <ChatModelSelector open={modelSelectorOpen} onClose={() => setModelSelectorOpen(false)} onSelect={switchChatModel} loadedModelId={modelStatus === 'ready' ? selectedModel.id : undefined} />
           {lastLoaded.model && modelStatus !== 'ready' && (modelStatus !== 'loading' || selectedModel.id === lastLoaded.model.id) && <View style={{ marginHorizontal: 16, marginVertical: 8, padding: 12, borderRadius: 12, backgroundColor: colors.surface, gap: 8 }}>
             <Text style={{ color: colors.secondary, fontSize: 13 }}>{modelStatus === 'loading' || isSwitchingChatModel ? 'Loading model…' : 'No model loaded'}</Text>
@@ -681,17 +817,31 @@ function PhoneGptApp() {
           </View>}
           {modelError && <Text accessibilityRole="alert" style={[styles.errorText, { marginHorizontal: 18, marginBottom: 8 }]}>{modelError}</Text>}
           {modelStatus === 'ready' && currentChat && <>
-          <View style={styles.contextBanner}><View style={styles.contextHeading}><Text style={styles.contextText}>Conversation: ~{usedContextTokens.toLocaleString()} / {inferenceSettings.contextSize.toLocaleString()} tokens</Text><Text style={styles.contextPercent}>{contextPercent}%</Text></View><View style={styles.contextTrack}><View style={[styles.contextFill, { width: `${contextPercent}%` }]} /></View><Text style={styles.contextHint}>Current chat only · reply limit: {inferenceSettings.maxTokens} tokens</Text></View></>}
+          <View style={styles.contextBanner}><View style={styles.contextHeading}><Text style={styles.contextText}>Conversation: ~{usedContextTokens.toLocaleString()} / {inferenceSettings.contextSize.toLocaleString()} tokens</Text><Text style={styles.contextPercent}>{contextPercent}%</Text></View><View style={styles.contextTrack}><View style={[styles.contextFill, { width: `${contextPercent}%` }]} /></View><Text style={styles.contextHint}>{currentWebUsage ? `${isGenerating ? 'Web turn' : 'Last web turn'} · includes prompt, sources & reply · web input +${currentWebUsage.evidenceTokens} tokens` : `Current chat only · reply limit: ${inferenceSettings.maxTokens} tokens`}</Text></View></>}
+          <View style={{ flex: 1, minHeight: 0 }}>
           <ScrollView ref={messageListRef} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.chatArea, currentChat && styles.messagesArea]} keyboardShouldPersistTaps="handled" onContentSizeChange={scrollToLatest} onLayout={scrollToLatest} scrollEventThrottle={16}
-            onScrollBeginDrag={() => { readingWithGesture.current = true; followLatest.current = false; }}
-            onScroll={(event) => { if (readingWithGesture.current) updateScrollPosition(event); }}
+            {...(Platform.OS === 'web' ? {
+              onWheel: (event: { nativeEvent?: { deltaY?: number }; deltaY?: number }) => {
+                if ((event.nativeEvent?.deltaY ?? event.deltaY ?? 0) < 0) followLatest.current = false;
+              },
+              onKeyDown: (event: { key?: string }) => {
+                if (['ArrowUp', 'PageUp', 'Home'].includes(event.key ?? '')) followLatest.current = false;
+              },
+            } : {})}
+            onTouchStart={pauseFollowing}
+            onTouchEnd={() => { readingWithGesture.current = false; }}
+            onTouchCancel={() => { readingWithGesture.current = false; }}
+            onScrollBeginDrag={(event) => { if (event?.nativeEvent?.contentOffset) updateScrollPosition(event); pauseFollowing(); }}
+            onScroll={updateScrollPosition}
             onScrollEndDrag={(event) => { updateScrollPosition(event); readingWithGesture.current = false; }}
             onMomentumScrollBegin={() => { readingWithGesture.current = true; }}
             onMomentumScrollEnd={(event) => { updateScrollPosition(event); readingWithGesture.current = false; scrollToLatest(); }}>
             {!currentChat && <Text style={styles.versionText}>PhoneGPT {APP_VERSION}</Text>}
-            {visibleMessages.map((item) => <View key={item.id} style={[styles.messageBubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}><View style={{ minWidth: 0, maxWidth: '100%' }}>{item.attachments?.map((file, index) => <Text key={`${file.name}-${index}`} selectable style={[styles.attachmentText, { color: item.role === 'user' ? colors.userText : colors.secondary, marginBottom: 6 }]}>📄 {file.name}</Text>)}<MessageContent content={item.content} color={item.role === 'user' ? colors.userText : colors.text} /></View></View>)}
-            {isGenerating && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={colors.primary} size="small" /><Text accessibilityLiveRegion="polite" style={styles.generatingText}>{isStopping ? 'Stopping…' : 'Generating locally…'}</Text></View>}
+            {visibleMessages.map((item) => <View key={item.id} style={[styles.messageBubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}><View style={{ minWidth: 0, maxWidth: '100%' }}>{item.attachments?.map((file, index) => <Text key={`${file.name}-${index}`} selectable style={[styles.attachmentText, { color: item.role === 'user' ? colors.userText : colors.secondary, marginBottom: 6 }]}>📄 {file.name}</Text>)}{item.web && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600', marginBottom: 6 }}>From the web</Text>}<MessageContent content={item.content} color={item.role === 'user' ? colors.userText : colors.text} />{item.web && <WebSources provenance={item.web} />}</View></View>)}
+            {isGenerating && webPhase !== 'searching' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={colors.primary} size="small" /><Text accessibilityLiveRegion="polite" style={styles.generatingText}>{isStopping ? 'Stopping…' : webPhase === 'deciding' ? 'Checking whether to search…' : 'Generating locally…'}</Text></View>}
           </ScrollView>
+          <WebSearchOverlay visible={isGenerating && webPhase === 'searching'} />
+          </View>
           <View style={[styles.composerWrap, { paddingBottom: keyboardVisible ? 6 : Math.max(insets.bottom, 12) }]}>
             {voice.model && <Text style={{ color: colors.secondary, fontSize: 12, marginBottom: 6 }} accessibilityLabel={`Voice model: ${voice.model.displayName}`}>Voice: {voice.model.displayName}{voice.mode === 'live' ? ' · Live' : ''}</Text>}
             {voice.busy && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}><Text accessibilityLiveRegion="polite" style={{ color: colors.secondary, flexShrink: 1 }}>{voice.status === 'recording' ? (voice.mode === 'live' ? 'Live transcription' : 'Recording') : voice.status === 'starting' ? (voice.mode === 'live' ? 'Preparing live transcription…' : 'Starting microphone…') : voice.status === 'cancelling' ? 'Cancelling…' : (voice.mode === 'live' ? 'Updating transcript…' : `Transcribing locally… ${Math.round(voice.progress)}%`)}</Text>{voice.status === 'recording' && <AudioLevelMeter level={voice.audioLevel} />}<Pressable accessibilityRole="button" accessibilityLabel="Cancel voice typing" disabled={voice.status === 'cancelling'} onPress={() => { void voice.cancel(); }} style={{ padding: 8 }}><Text style={{ color: colors.error }}>Cancel</Text></Pressable></View>}
@@ -702,17 +852,18 @@ function PhoneGptApp() {
             {isGenerating ? <Pressable accessibilityRole="button" accessibilityLabel={isStopping ? 'Stopping generation' : 'Stop generating'} accessibilityHint="Keeps the reply generated so far" accessibilityState={{ disabled: isStopping, busy: isStopping }} disabled={isStopping} onPress={stopGeneration} style={[styles.sendButton, { backgroundColor: colors.errorSurface }]}>{isStopping ? <ActivityIndicator color={colors.error} size="small" /> : <AppIcon name="stop" color={colors.error} />}</Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={isDeletingChat || (!message.trim() && !attachedText) || voice.busy || isGenerating || isPickingFile || isSwitchingChatModel || modelStatus === 'loading'} onPress={send} style={[styles.sendButton, (isDeletingChat || (!message.trim() && !attachedText) || voice.busy || isGenerating || isPickingFile || isSwitchingChatModel || modelStatus === 'loading') && styles.sendButtonDisabled]}><AppIcon name="up" color={colors.onPrimary} /></Pressable>}
           </View></View>
         </View>}
-        {screen === 'models' && <SimpleScreen title="Models" onMenu={openDrawer}><ScrollView style={styles.modelScroll} contentContainerStyle={styles.modelList}><View style={{ gap: 6, marginBottom: 10 }}><Text style={{ color: colors.text, fontSize: 22, fontWeight: '700' }}>Find your next model</Text><Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 20 }}>Download once, use offline. Expand a family to explore chat models, or choose Voice for dictation.</Text></View><VoiceModels selectedId={voice.selectedId} onSelect={voice.select} disabled={voice.busy || isGenerating || !voice.ready} /><Text style={styles.sectionLabel}>Chat models</Text>{MODEL_GROUPS.map((group) => <ProviderGroup key={group.name} name={group.name} count={group.models.length} >{group.sections.map((section) => <ProviderGroup key={section.name} name={section.name} count={section.models.length}>{section.models.map((model) => <View key={model.id} style={[styles.catalogCard, modelStatus === 'ready' && selectedModel.id === model.id && styles.catalogCardSelected]}><Pressable accessibilityRole="button" accessibilityLabel={`${model.displayName}, model options`} accessibilityState={{ expanded: expandedModelId === model.id }} onPress={() => { void selectModel(model); }}><View style={styles.catalogHeader}><Text style={styles.modelName}>{model.displayName}</Text>{modelStatus === 'ready' && selectedModel.id === model.id && <Text style={styles.selectedText}>Selected</Text>}</View><Text style={styles.catalogProvider}>{model.provider}</Text><Text style={styles.catalogDetail}>{model.capabilities.join(' · ')} · {formatBytes(model.sizeBytes)}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>{expandedModelId === model.id ? 'Hide options' : 'Model options'}</Text><View style={{ transform: [{ rotate: expandedModelId === model.id ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.primary} size={16} /></View></View></Pressable>{expandedModelId === model.id && selectedModel.id === model.id && <View style={styles.modelExpansion}>{modelButton()}{modelControls}{modelError && <Text style={styles.errorText}>{modelError}</Text>}</View>}</View>)}</ProviderGroup>)}</ProviderGroup>)}</ScrollView></SimpleScreen>}
+        {screen === 'models' && <SimpleScreen title="Models" onMenu={openDrawer}><ScrollView style={styles.modelScroll} contentContainerStyle={styles.modelList}><View style={{ gap: 6, marginBottom: 10 }}><Text style={{ color: colors.text, fontSize: 22, fontWeight: '700' }}>Find your next model</Text><Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 20 }}>Download once, use offline. Expand a family to explore chat models, or choose Voice for dictation.</Text></View><VoiceModels selectedId={voice.selectedId} onSelect={voice.select} disabled={voice.busy || isGenerating || !voice.ready} /><Text style={styles.sectionLabel}>Chat models</Text>{MODEL_GROUPS.map((group) => <ProviderGroup key={group.name} name={group.name} count={group.models.length} >{group.sections.map((section) => <ProviderGroup key={section.name} name={section.name} count={section.models.length}>{section.models.map((model) => <View key={model.id} style={[styles.catalogCard, modelStatus === 'ready' && selectedModel.id === model.id && styles.catalogCardSelected]}><Pressable accessibilityRole="button" accessibilityLabel={`${model.displayName}${model.preferred ? ', Preferred' : ''}, model options`} accessibilityState={{ expanded: expandedModelId === model.id }} onPress={() => { void selectModel(model); }}><View style={styles.catalogHeader}><View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><Text style={[styles.modelName, { flexShrink: 1 }]}>{model.displayName}</Text>{model.preferred && <Text style={{ color: colors.primary, backgroundColor: colors.raised, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>Preferred</Text>}</View>{modelStatus === 'ready' && selectedModel.id === model.id && <Text style={styles.selectedText}>Selected</Text>}</View><Text style={styles.catalogProvider}>{model.provider}</Text><Text style={styles.catalogDetail}>{model.capabilities.join(' · ')} · {formatBytes(model.sizeBytes)}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>{expandedModelId === model.id ? 'Hide options' : 'Model options'}</Text><View style={{ transform: [{ rotate: expandedModelId === model.id ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.primary} size={16} /></View></View></Pressable>{expandedModelId === model.id && selectedModel.id === model.id && <View style={styles.modelExpansion}>{modelButton()}{modelControls}{modelError && <Text style={styles.errorText}>{modelError}</Text>}</View>}</View>)}</ProviderGroup>)}</ProviderGroup>)}</ScrollView></SimpleScreen>}
         {screen === 'settings' && <SimpleScreen title="Settings" onMenu={openDrawer}><SettingsContent bottomInset={insets.bottom} promptSettings={promptSettings} modelControls={modelControls} /></SimpleScreen>}
-        {screen === 'info' && <SimpleScreen title="App Info" onMenu={openDrawer}><ScrollView contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 32) }}><AppInfo version={APP_VERSION} /></ScrollView></SimpleScreen>}
+        {screen === 'info' && <SimpleScreen title="App Info" onMenu={openDrawer}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 32) }}><AppInfo version={APP_VERSION} /></ScrollView></SimpleScreen>}
         <NavigationDrawer open={drawerOpen} onExited={onDrawerExited} onClose={closeDrawer} onRequestClose={() => { handleBackPress(); }}><SafeAreaView edges={['top', 'bottom', 'left']} style={styles.drawer}>
           <View style={styles.drawerTop}><PhoneGptLogo size={32} /><Text style={[styles.drawerTitle, { flex: 1, marginLeft: 10 }]}>PhoneGPT</Text><Pressable accessibilityRole="button" accessibilityLabel="Close menu" style={styles.iconButton} hitSlop={10} onPress={closeDrawer}><AppIcon name="close" color={colors.secondary} /></Pressable></View>
           <Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'home' }} onPress={() => go('home')} style={({ pressed }) => [styles.navItem, screen === 'home' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="home" color={screen === 'home' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'home' && { color: colors.primary }]}>Home</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'chat' }} onPress={newChat} style={({ pressed }) => [styles.navItem, screen === 'chat' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="chat" color={screen === 'chat' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'chat' && { color: colors.primary }]}>New chat</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'models' }} onPress={() => go('models')} style={({ pressed }) => [styles.navItem, screen === 'models' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="models" color={screen === 'models' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'models' && { color: colors.primary }]}>Models</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'settings' }} onPress={() => go('settings')} style={({ pressed }) => [styles.navItem, screen === 'settings' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="settings" color={screen === 'settings' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'settings' && { color: colors.primary }]}>Settings</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'info' }} onPress={() => go('info')} style={({ pressed }) => [styles.navItem, screen === 'info' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="info" color={screen === 'info' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'info' && { color: colors.primary }]}>App Info</Text></Pressable>
-          <View style={styles.divider} /><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}><Text accessibilityRole="header" style={[styles.historyHeading, { marginBottom: 0 }]}>Chat History</Text><Pressable accessibilityRole="button" accessibilityLabel="Search chat history" accessibilityState={{ disabled: isGenerating || voice.busy || isPickingFile }} disabled={isGenerating || voice.busy || isPickingFile} onPress={openHistorySearch} style={({ pressed }) => ({ width: 44, height: 44, marginLeft: 4, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.raised, opacity: isGenerating || voice.busy || isPickingFile ? 0.4 : pressed ? 0.65 : 1 })}><AppIcon name="search" color={colors.primary} size={20} /></Pressable></View>{!chats.length && <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 19, paddingVertical: 12 }}>Your conversations will appear here after your first message.</Text>}<ScrollView contentContainerStyle={styles.historyList} showsVerticalScrollIndicator={false}>{chats.map((chat) => {
+          <View style={styles.divider} /><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}><Text accessibilityRole="header" style={[styles.historyHeading, { marginBottom: 0 }]}>Chat History</Text><View style={{ flexDirection: 'row', gap: 6 }}><Pressable accessibilityRole="button" accessibilityLabel="Search chat history" accessibilityState={{ disabled: isGenerating || voice.busy || isPickingFile }} disabled={isGenerating || voice.busy || isPickingFile} onPress={openHistorySearch} style={({ pressed }) => [controlSurface(colors, isGenerating || voice.busy || isPickingFile, pressed), { width: 44, paddingHorizontal: 0 }]}><AppIcon name="search" color={colors.primary} size={20} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export chat history" accessibilityState={{ disabled: isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded }} disabled={isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded} onPress={openChatExport} style={({ pressed }) => [controlSurface(colors, isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded, pressed), { width: 44, paddingHorizontal: 0 }]}><AppIcon name="export" color={colors.primary} size={20} /></Pressable></View></View>{!chats.length && <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 19, paddingVertical: 12 }}>Your conversations will appear here after your first message.</Text>}<ScrollView contentContainerStyle={styles.historyList} showsVerticalScrollIndicator={false}>{chats.map((chat) => {
             const labels = chatHistoryLabels(chat);
             return <View key={chat.id} style={styles.historyItem}><Pressable accessibilityRole="button" accessibilityLabel={`${labels.title}, ${labels.date}, ${labels.time}`} onPress={() => { setCurrentChat(chat); setAttachedText(null); setMessage(''); go('chat'); }} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}><View style={styles.dot} /><Text numberOfLines={1} style={styles.historyText}>{labels.title}</Text><View style={{ alignItems: 'flex-end', flexShrink: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10 }}>{labels.date}</Text><Text style={{ color: colors.muted, fontSize: 10 }}>{labels.time}</Text></View></Pressable><DeleteChatButton chatTitle={labels.title} disabled={isDeletingChat || isGenerating || voice.busy || isPickingFile || !historyLoaded} onConfirm={() => deleteChat(chat)} /></View>;
           })}</ScrollView>
         </SafeAreaView></NavigationDrawer>
+        <ChatExport open={exportOpen} chats={chats} onClose={() => setExportOpen(false)} />
         <ChatHistorySearch open={searchOpen} chats={chats} onDelete={deleteChat} deletingDisabled={isDeletingChat || isGenerating || voice.busy || isPickingFile || !historyLoaded} onClose={() => setSearchOpen(false)} onSelect={(chat) => { setCurrentChat(chat); setAttachedText(null); setMessage(''); go('chat'); }} />
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -731,5 +882,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   chatArea: { flexGrow: 1, paddingHorizontal: 16, paddingVertical: 18, justifyContent: 'center' }, messagesArea: { justifyContent: 'flex-start' }, versionText: { alignSelf: 'center', color: colors.muted, fontSize: 13, fontWeight: '600' }, generatingText: { alignSelf: 'flex-start', color: colors.secondary, fontSize: 14, fontWeight: '600', marginVertical: 8 }, messageBubble: { maxWidth: '92%', minWidth: 0, flexShrink: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 10 }, userBubble: { alignSelf: 'flex-end', maxWidth: '84%', backgroundColor: colors.userBubble, borderBottomRightRadius: 4 }, assistantBubble: { alignSelf: 'flex-start', width: '92%', backgroundColor: colors.assistantBubble, borderBottomLeftRadius: 4 }, messageText: { color: colors.text, fontSize: 16, lineHeight: 22 }, userMessageText: { color: colors.userText },
   composerWrap: { paddingHorizontal: 16, paddingTop: 8, backgroundColor: colors.background }, attachmentRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6, backgroundColor: colors.raised, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 5 }, attachmentText: { color: colors.secondary, fontSize: 12, fontWeight: '700' }, attachmentRemove: { color: colors.error, fontSize: 19, lineHeight: 19 }, composer: { minHeight: 56, maxHeight: 124, flexDirection: 'row', alignItems: 'flex-end', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingLeft: 6, paddingRight: 6, paddingVertical: 6 }, imageButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }, imageButtonDisabled: { opacity: 0.3 }, input: { flex: 1, alignSelf: 'stretch', color: colors.text, fontSize: 16, maxHeight: 104, paddingTop: 10, paddingBottom: 10 }, sendButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }, sendButtonDisabled: { backgroundColor: colors.disabled }, sendIcon: { color: colors.onPrimary, fontSize: 22, fontWeight: '700', marginTop: -2 },
   drawer: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 }, drawerTop: { height: 68, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, drawerTitle: { color: colors.text, fontSize: 23, fontWeight: '800' }, closeIcon: { color: colors.text, fontSize: 30, lineHeight: 30 }, navItem: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, borderRadius: 12, marginBottom: 4, paddingVertical: 13, paddingHorizontal: 12 }, navText: { color: colors.text, fontSize: 15, fontWeight: '600' }, divider: { height: 1, backgroundColor: colors.border, marginTop: 18, marginBottom: 22 }, historyHeading: { color: colors.secondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 11 }, historyList: { paddingBottom: 24, gap: 4 }, historyItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 }, dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.muted }, historyText: { flex: 1, color: colors.secondary, fontSize: 15 },
-  pageContent: { flex: 1, padding: 20 }, modelScroll: { flex: 1, marginHorizontal: -20 }, modelList: { padding: 20, gap: 10, paddingBottom: 36 }, sectionLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 }, catalogCard: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, backgroundColor: colors.surface }, catalogCardSelected: { borderColor: colors.primary, borderWidth: 2 }, catalogHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, selectedText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700', backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }, catalogProvider: { color: colors.secondary, fontSize: 12, fontWeight: '700', marginTop: 4 }, catalogDetail: { color: colors.secondary, fontSize: 13, lineHeight: 18, marginTop: 4 }, expandText: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginTop: 12 }, modelExpansion: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginTop: 14, paddingTop: 14 }, modelCard: { borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 16 }, modelName: { color: colors.text, fontSize: 16, fontWeight: '700' }, modelDetail: { color: colors.secondary, fontSize: 14, marginTop: 5, marginBottom: 16 }, modelStatus: { color: colors.secondary, fontSize: 14 }, downloadRow: { flexDirection: 'row', alignItems: 'center', gap: 10 }, cancelButton: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.errorSurface, alignItems: 'center', justifyContent: 'center' }, cancelText: { color: colors.error, fontSize: 22, lineHeight: 25 }, primaryButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 }, primaryButtonText: { color: colors.onPrimary, fontSize: 14, fontWeight: '700' }, readyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }, readyText: { color: colors.success, fontSize: 14, fontWeight: '700' }, deleteText: { color: colors.error, fontSize: 14, fontWeight: '700' }, modelControls: { gap: 2, paddingTop: 6 }, controlLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginBottom: 8 }, choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }, choiceButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.background }, choiceButtonActive: { borderColor: colors.text, backgroundColor: colors.primary }, choiceText: { color: colors.secondary, fontSize: 13, fontWeight: '700' }, choiceTextActive: { color: colors.onPrimary }, controlHint: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 12 }, errorText: { color: colors.error, fontSize: 13, marginTop: 12 }, placeholderText: { color: colors.secondary, fontSize: 16 },
+  pageContent: { flex: 1, padding: 20 }, modelScroll: { flex: 1, marginHorizontal: -20 }, modelList: { padding: 20, gap: 10, paddingBottom: 36 }, sectionLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 }, catalogCard: { borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, padding: 14, backgroundColor: colors.surface }, catalogCardSelected: { borderColor: colors.primary, borderWidth: 2 }, catalogHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, selectedText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700', backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }, catalogProvider: { color: colors.secondary, fontSize: 12, fontWeight: '700', marginTop: 4 }, catalogDetail: { color: colors.secondary, fontSize: 13, lineHeight: 18, marginTop: 4 }, expandText: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginTop: 12 }, modelExpansion: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginTop: 14, paddingTop: 14 }, modelCard: { borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, padding: 16 }, modelName: { color: colors.text, fontSize: 16, fontWeight: '700' }, modelDetail: { color: colors.secondary, fontSize: 14, marginTop: 5, marginBottom: 16 }, modelStatus: { color: colors.secondary, fontSize: 14 }, downloadRow: { flexDirection: 'row', alignItems: 'center', gap: 10 }, cancelButton: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.errorSurface, alignItems: 'center', justifyContent: 'center' }, cancelText: { color: colors.error, fontSize: 22, lineHeight: 25 }, primaryButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 }, primaryButtonText: { color: colors.onPrimary, fontSize: 14, fontWeight: '700' }, readyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }, readyText: { color: colors.success, fontSize: 14, fontWeight: '700' }, deleteText: { color: colors.error, fontSize: 14, fontWeight: '700' }, modelControls: { gap: 2, paddingTop: 6 }, controlLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginBottom: 8 }, choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }, choiceButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.background }, choiceButtonActive: { borderColor: colors.text, backgroundColor: colors.primary }, choiceText: { color: colors.secondary, fontSize: 13, fontWeight: '700' }, choiceTextActive: { color: colors.onPrimary }, controlHint: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 12 }, errorText: { color: colors.error, fontSize: 13, marginTop: 12 }, placeholderText: { color: colors.secondary, fontSize: 16 },
 });

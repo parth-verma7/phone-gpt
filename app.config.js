@@ -1,9 +1,10 @@
-// Match Expo's development launcher metadata to the separate Android debug app.
+// Match Expo's development launcher metadata to the separate native Dev app.
 module.exports = ({ config }) => process.env.APP_VARIANT === 'development'
   ? {
     ...config,
     name: 'PhoneGPT Dev',
     scheme: 'exp+phone-gpt-dev',
     android: { ...config.android, package: 'com.phonegpt.app.dev' },
+    ios: { ...config.ios, bundleIdentifier: 'com.phonegpt.app.dev' },
   }
   : config;

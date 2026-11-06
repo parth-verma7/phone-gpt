@@ -1,0 +1,6 @@
+---
+description: Keep PhoneGPT product requirements and technical design current with feature and service changes
+alwaysApply: true
+---
+
+Follow the documentation maintenance instructions in `AGENTS.md` for every change in this repository. Product changes belong in `docs/PRODUCT_REQUIREMENTS.md`; technical changes and their rationale belong in `docs/TECHNICAL_DESIGN.md`. Update both when applicable before completing or shipping the change, and distinguish Dev source from shipped artifacts.

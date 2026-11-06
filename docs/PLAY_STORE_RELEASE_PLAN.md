@@ -1,6 +1,8 @@
 # PhoneGPT UI polish and Play Store release
 
-Updated: 2026-10-31. Current priority: a clean, smooth Android app without account requirements. No cloud account database or chat uploads in the first release.
+Updated: 2026-11-03. Current priority: a clean, smooth Android app without account requirements. No cloud account database or chat uploads in the first release.
+
+**Current verdict: not ready for submission.** See the [evidence and remaining gates](PLAY_STORE_READINESS.md), including AI reporting/safeguards, signing, privacy and device tests. iOS launch is tracked separately and remains To-do.
 
 ## Design direction
 

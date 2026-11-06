@@ -1,3 +1,4 @@
+import { CONTROL } from '../theme/controlStyles';
 import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { ScaledText as Text } from './ScaledText';
@@ -10,15 +11,15 @@ export function ActionButton({ label, onPress, icon, secondary = false, danger =
   const { colors } = useAppTheme();
   const foreground = danger ? colors.error : secondary ? colors.primary : colors.onPrimary;
   return <Pressable accessibilityRole="button" accessibilityState={{ disabled: disabled || busy, busy }} disabled={disabled || busy} onPress={onPress}
-    style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '100%', backgroundColor: danger ? colors.errorSurface : secondary ? colors.raised : colors.primary, opacity: disabled || busy ? 0.5 : pressed ? 0.72 : 1 })}>
+    style={({ pressed }) => ({ minHeight: CONTROL.height, paddingHorizontal: 14, paddingVertical: 11, borderRadius: CONTROL.radius, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'flex-start', maxWidth: '100%', borderWidth: 1, borderColor: danger ? colors.errorSurface : secondary ? colors.border : colors.primary, backgroundColor: danger ? colors.errorSurface : secondary ? colors.raised : colors.primary, opacity: disabled || busy ? 0.5 : pressed ? 0.72 : 1 })}>
     {busy ? <ActivityIndicator color={foreground} size="small" /> : icon && <AppIcon name={icon} color={foreground} size={18} />}
-    <Text style={{ color: foreground, fontSize: 13, fontWeight: '700', flexShrink: 1 }}>{label}</Text>
+    <Text style={{ color: foreground, ...CONTROL.label, flexShrink: 1 }}>{label}</Text>
   </Pressable>;
 }
 
 export function SettingsCard({ title, description, icon, children }: { title: string; description?: string; icon: AppIconName; children: ReactNode }) {
   const { colors } = useAppTheme();
-  return <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 18, gap: 14 }}>
+  return <View style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, padding: 18, gap: 14 }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><AppIcon name={icon} color={colors.primary} size={20} /><Text accessibilityRole="header" style={{ flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' }}>{title}</Text></View>
     {description && <Text style={{ color: colors.secondary, fontSize: 12, lineHeight: 19 }}>{description}</Text>}
     {children}

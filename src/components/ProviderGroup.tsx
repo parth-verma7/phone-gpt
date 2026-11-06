@@ -1,3 +1,4 @@
+import { CONTROL } from '../theme/controlStyles';
 import { AppIcon } from './AppIcon';
 import { ScaledText as Text } from './ScaledText';
 import { useAppTheme, type ThemeColors } from '../theme/AppTheme';
@@ -45,9 +46,9 @@ export function ProviderGroup({ name, count, children }: {
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  group: { borderWidth: 1, borderColor: colors.border, borderRadius: 16, overflow: 'hidden' },
+  group: { borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, backgroundColor: colors.surface, minHeight: 56 },
-  name: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '700' },
+  name: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700' },
   count: { color: colors.secondary, fontSize: 12 },
   chevron: { color: colors.secondary, fontSize: 12 },
   models: { padding: 10, gap: 10 },

@@ -1,0 +1,7 @@
+{
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["PhoneGptRecorderModule", "PhoneGptDownloadsModule"],
+    "appDelegateSubscribers": ["PhoneGptBackgroundSessionSubscriber"]
+  }
+}

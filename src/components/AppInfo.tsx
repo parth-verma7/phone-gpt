@@ -1,10 +1,11 @@
 import { ScaledText as Text } from './ScaledText';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useAppTheme } from '../theme/AppTheme';
 import { PhoneGptLogo } from './PhoneGptLogo';
 import { SettingsCard } from './UiKit';
 import type { AppIconName } from './AppIcon';
 import { VOICE_TRANSCRIPTION_MODE } from '../config/voice';
+import { ContactForm } from './ContactForm';
 
 export function AppInfo({ version }: { version: string }) {
   const { colors } = useAppTheme();
@@ -23,7 +24,9 @@ export function AppInfo({ version }: { version: string }) {
     },
     {
       title: 'Voice typing', icon: 'chat',
-      text: 'On Android, download and select an English Whisper model in Models → Voice. ' + (VOICE_TRANSCRIPTION_MODE === 'live' ? 'Tap the microphone for live, on-device transcription into your draft. Recent words may change. Tap Stop to finish.' : 'Tap the microphone to record, then tap Stop to transcribe locally into your draft.') + ' Recordings continue until you stop and are deleted after use. Voice typing does not send a message automatically.',
+      text: Platform.OS === 'android'
+        ? 'Download and select an English Whisper model in Models → Voice. ' + (VOICE_TRANSCRIPTION_MODE === 'live' ? 'Tap the microphone for live, on-device transcription into your draft. Recent words may change. Tap Stop to finish.' : 'Tap the microphone to record, then tap Stop to transcribe locally into your draft.') + ' Recordings continue until you stop and are deleted after use. Voice typing does not send a message automatically.'
+        : 'On-device voice typing is available on Android. Voice typing on iOS has not yet been verified on a device.',
     },
     {
       title: 'Your saved data', icon: 'shield',
@@ -45,10 +48,7 @@ export function AppInfo({ version }: { version: string }) {
     {sections.map((section) => <SettingsCard key={section.title} title={section.title} icon={section.icon}>
       <Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 21 }}>{section.text}</Text>
     </SettingsCard>)}
-    <View style={{ gap: 8, marginTop: 8 }}>
-      <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 22, fontWeight: '700' }}>Parth Verma</Text>
-      <Text style={{ color: colors.secondary, fontSize: 14, fontWeight: '600' }}>Founder &amp; Developer, PhoneGPT</Text>
-      <Text style={{ color: colors.secondary, fontSize: 15, lineHeight: 23 }}>Parth is a Machine Learning Engineer at Coinbase and the founder of PhoneGPT. He is building PhoneGPT to bring private, on-device AI into everyday use—giving people a simple way to download models and chat on their own phones.</Text>
-    </View>
+    <Text style={{ color: colors.secondary, fontSize: 14 }}>Created by Parth Verma</Text>
+    <ContactForm />
   </View>;
 }

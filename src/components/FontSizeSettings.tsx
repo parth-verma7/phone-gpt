@@ -1,7 +1,8 @@
+import { CONTROL } from '../theme/controlStyles';
 import { SettingsCard } from './UiKit';
 import { Pressable, View } from 'react-native';
 import { useAppTheme } from '../theme/AppTheme';
-import { FONT_SCALE_PRESETS, useFontScale } from '../theme/FontScale';
+import { DEFAULT_FONT_SCALE, FONT_SCALE_PRESETS, useFontScale } from '../theme/FontScale';
 import { ScaledText as Text } from './ScaledText';
 
 export function FontSizeSettings() {
@@ -18,9 +19,9 @@ export function FontSizeSettings() {
           accessibilityState={{ checked: selected, disabled: !ready }}
           disabled={!ready}
           onPress={() => setFontScale(scale)}
-          style={{ minWidth: 52, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: selected ? colors.primary : colors.raised, opacity: ready ? 1 : 0.5 }}
+          style={{ minWidth: 52, minHeight: CONTROL.height, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center', justifyContent: 'center', borderRadius: CONTROL.radius, backgroundColor: selected ? colors.primary : colors.raised, opacity: ready ? 1 : 0.5 }}
         >
-          <Text style={{ color: selected ? colors.onPrimary : colors.text, fontSize: 14, fontWeight: '600' }}>{scale === 1 ? 'Default' : `${scale}×`}</Text>
+          <Text style={{ color: selected ? colors.onPrimary : colors.text, ...CONTROL.label }}>{`${scale}×${scale === DEFAULT_FONT_SCALE ? ' (Default)' : ''}`}</Text>
         </Pressable>;
       })}
     </View>

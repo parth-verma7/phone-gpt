@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { NativeModules, Platform } from 'react-native';
 import modelCatalog from '../data/models.json';
+import { UNCENSORED_MODELS_ENABLED } from '../config/features';
 
 export type ModelDefinition = (typeof modelCatalog)[number];
 export type DownloadableModel = Pick<ModelDefinition, 'id' | 'downloadUrl' | 'fileName' | 'sizeBytes' | 'minFreeBytes'>;
@@ -28,6 +29,10 @@ type BackgroundDownloads = {
 };
 
 function backgroundDownloads(): BackgroundDownloads | undefined {
+  if (Platform.OS === 'ios') {
+    const { requireOptionalNativeModule } = require('expo') as typeof import('expo');
+    return requireOptionalNativeModule('PhoneGptDownloads') as BackgroundDownloads | undefined ?? undefined;
+  }
   return Platform.OS === 'android' ? NativeModules.PhoneGptDownloads : undefined;
 }
 
@@ -43,13 +48,13 @@ export async function getModelDownloadState(model: DownloadableModel): Promise<M
 
 export async function pauseModelDownload(model: DownloadableModel) {
   const native = backgroundDownloads();
-  if (!native?.pause) throw new Error('Install the updated Dev APK to enable Pause and Resume.');
+  if (!native?.pause) throw new Error('Install the updated native PhoneGPT build to enable Pause and Resume.');
   return native.pause(model.id);
 }
 
 export async function resumeModelDownload(model: DownloadableModel) {
   const native = backgroundDownloads();
-  if (!native?.resume) throw new Error('Install the updated Dev APK to enable Pause and Resume.');
+  if (!native?.resume) throw new Error('Install the updated native PhoneGPT build to enable Pause and Resume.');
   return native.resume(model.id);
 }
 
@@ -60,7 +65,8 @@ export class ModelDownloadCancelledError extends Error {
   }
 }
 
-export const models = modelCatalog as ModelDefinition[];
+// All model pickers, provider groups and last-loaded restoration use this list.
+export const models = modelCatalog.filter(model => UNCENSORED_MODELS_ENABLED || model.censorship !== 'uncensored') as ModelDefinition[];
 
 export function modelPath(model: DownloadableModel) {
   return `${MODELS_DIRECTORY}${model.fileName}`;
@@ -119,7 +125,7 @@ export async function downloadModel(
   onState?: (state: ModelDownloadState) => void,
 ) {
   const native = backgroundDownloads();
-  if (Platform.OS === 'android' && !native) {
+  if (['android', 'ios'].includes(Platform.OS) && !native) {
     throw new Error('Install the updated native PhoneGPT app to enable background model downloads.');
   }
   if (native) {

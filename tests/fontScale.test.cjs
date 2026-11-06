@@ -129,7 +129,7 @@ test('hydrates valid presets without overwriting storage; ignores invalid saved 
     assert.equal(instance.render().ready, false);
     await tick();
     assert.equal(instance.render().ready, true);
-    assert.equal(instance.render().fontScale, ['invalid', '2', null].includes(saved) ? 1 : Number(saved));
+    assert.equal(instance.render().fontScale, ['invalid', '2', null].includes(saved) ? 0.8 : Number(saved));
     assert.equal(writes.length, 0);
     instance.unmount();
   }

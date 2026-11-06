@@ -184,3 +184,12 @@ Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/)
 - [ ] **Contact A54 acceptance:** submit an intentional message, verify Formspree delivery to the configured inbox; test offline failure, retained draft and long text. Chat-list navigation remains discussion/proposal only.
 
 - [x] **Standalone 0.5.8/code 22:** direct contact form packaged; current sources, native modules, removed email, bundled endpoint and update signature verified. 164 tests passed; no live feedback submitted.
+
+- [x] **0.5.9 source/Dev navigation:** Home retained; four bottom tabs; full Chats list, first-message titles, start timestamps, last-message previews, raw-transcript search, export and Settings → App info/contact. UUIDs remain internal.
+- [x] **Safer chat editing:** remove row trash buttons; Edit, checkbox selection, matching Select all and confirmed Delete selected with partial-failure recovery.
+- [x] **Readable previews:** conservative Markdown-to-plain display helper, preserving raw stored/searchable messages and literal symbols.
+- [x] **Web routing and state:** 16-token YES/NO router with local fallback instead of a decision failure; explicit search requests preserved; filled Web on and neutral Web off.
+- [ ] **A54 0.5.9 acceptance:** Home/Chats/Models/Settings, back hierarchy, existing chat retention/titles, draft switching, list search, selected deletion/cancel/error, exports, keyboard/voice/stream scrolling, ambiguous Web questions and clearly visible on/off states. Production build/signature verification passed; A54 acceptance remains pending.
+
+- [x] **Standalone 0.5.9/code 23:** four-tab navigation with Home retained, first-message titles, readable previews, Edit/confirmed deletion and web fixes packaged; signer matches 0.5.8. 180 automated checks passed.
+- [x] **0.5.9 GitHub publication authorized:** owner requested the push on 2026-11-07. Includes navigation, editing, preview formatting, web fixes and documentation. Native A54 acceptance remains separate; the earlier 0.5.8 sync was 7d3794e.

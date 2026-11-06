@@ -10,10 +10,10 @@ For delivery status, start with [PROJECT_TRACKER.md](PROJECT_TRACKER.md), the [A
 
 ## Version and build status
 
-- Latest standalone Android APK: **0.5.8**, version code **22**: `PhoneGPT-v0.5.8-standalone.apk` (~63.2 MB). Includes six saved theme colors and current Dev features, including optional Web search, compact models, larger context controls and latest voice/scroll fixes. It embeds Hermes code and starts without Metro. See [0.5.8 release notes](docs/RELEASE_0.5.8.md).
-- Latest built **PhoneGPT Dev** APK remains `PhoneGPT-v0.5.4-development.apk` (`com.phonegpt.app.dev`, native version `0.5.4-dev`); it receives current **0.5.8 JavaScript** from Metro on port 8083. No new Dev APK was needed for these JS-only features. Production uses `com.phonegpt.app`; the two apps keep separate local data.
+- Latest standalone Android APK: **0.5.9**, version code **23**: `PhoneGPT-v0.5.9-standalone.apk` (~63.2 MB). Includes six saved theme colors and current Dev features, including optional Web search, compact models, larger context controls and latest voice/scroll fixes. It embeds Hermes code and starts without Metro. See [0.5.9 release notes](docs/RELEASE_0.5.9.md).
+- Latest built **PhoneGPT Dev** APK remains `PhoneGPT-v0.5.4-development.apk` (`com.phonegpt.app.dev`, native version `0.5.4-dev`); it receives current **0.5.9 JavaScript** from Metro on port 8083. No new Dev APK was needed for these JS-only features. Production uses `com.phonegpt.app`; the two apps keep separate local data.
 - Optional Web search is enabled in **both Dev and standalone 0.5.6**, using the same public proxy and existing quota. Model files and chats are preserved when uncensored catalog entries are hidden.
-- Standalone installation on A54, offline inference and Android export folder/write remain device checks. Install the compatible update over the existing app rather than uninstalling. Expo iOS metadata is 0.5.8 / build number 22, with no compiled/signed iOS artifact.
+- Standalone installation on A54, offline inference and Android export folder/write remain device checks. Install the compatible update over the existing app rather than uninstalling. Expo iOS metadata is 0.5.9 / build number 23, with no compiled/signed iOS artifact.
 - SDK: **Expo 57** (installed Expo **57.0.30**), React Native **0.86.3**, React **19.2.3**. Old SDK 54 instructions are historical. **Expo Go cannot run the custom inference, recording and download modules.**
 - APKs use the existing local signing certificate so compatible updates preserve each installed app's data. Keep signing material private and unchanged for these local installations; a Play Store upload/signing workflow is still a separate release task. APK files, model weights, local SDK/JDK and secrets are excluded from Git.
 - Source-only changes reach Dev through Metro; the standalone APK must be rebuilt. Native dependencies/resources/permissions require updated APKs for either app. The supplied artwork is `assets-phonegpt-icon.png`; `scripts/generate-branding.py` packages launcher/splash sizes, and Expo config plus in-app Home/About/drawer use the same image.
@@ -56,7 +56,7 @@ After each important change, finish automated checks and have Parth verify the r
 - The visible context tracker counts the current conversation, including file content, and excludes hidden system instructions. It is not a complete measure of model memory or prompt-template overhead.
 - Persistent light/dark theme and a saved System Prompt field. A new chat snapshots the saved prompt at its first send; later turns reuse it as a hidden system-role message before the conversation. Existing chats retain their prompt. Blank uses the default assistant prompt, currently named **Parth**.
 - App Info includes the app version, local processing/storage details, TXT support, development-build offline requirements and a short creator credit/contact form.
-- Android Back: open drawer → Chat; secondary screen → Chat; Chat → Home; Home → system exit.
+- Navigation: Home (opening page), Chats, Models and Settings bottom tabs; App Info/Contact under Settings. Chat → Chats → Home → system exit on Android Back. Chats provides inline search, Export and Edit/selected deletion without row trash icons.
 
 The catalog has 13 downloadable variants, grouped under Qwen, LLaMA, SmolLM, DeepSeek and Gemma. Each family contains nonempty Censored and/or Uncensored subgroups, using the explicit `censorship` field in `models.json`. All family and subgroup dropdowns start closed when entering Models; individual model options also reset closed. Censored identifies the standard releases in this catalog, and Uncensored identifies community uncensored/abliterated releases; these labels are not guarantees about every response. Existing standard models remain available alongside these community uncensored/abliterated variants:
 
@@ -247,3 +247,9 @@ The current shared source includes six saved theme colors under Settings → App
 ### Contact form
 
 App Info → Contact submits name, reply email and message directly to the website's Formspree endpoint. No inbox address is exposed and no email app opens. There is no app-imposed message-length cap. Only explicit contact fields are transmitted; chats and attachments are excluded. Network/provider failures retain the draft; submission acknowledgement is distinct from confirmed inbox delivery. Formspree quotas and spam filtering still apply.
+
+### 0.5.9 navigation and web follow-up
+
+Home remains the opening page. Chats is a full list with first-message titles, last-message previews, original creation dates and inline search. Edit enables selection and confirmed deletion; Export stays beside search. Common Markdown is cleaned for previews without changing raw transcripts. App Info/Contact is under Settings. Chat headers show readable titles while UUIDs remain storage/export keys. Unsent drafts are preserved in memory while switching saved chats.
+
+Web on is a filled accent button; off is neutral. The ambiguous-question router requests a short YES/NO answer and uses a local reply if it cannot parse a decision, instead of stopping the user turn. Explicit search requests still search. Native A54 acceptance remains pending.

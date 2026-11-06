@@ -14,24 +14,24 @@ async function harness(text) {
  const api=load('src/services/localInference.ts', name=>{
   if(name==='react-native')return {Platform:{OS:'android'}};
   if(name==='./tokenLimits')return tokens;
-  if(name==='llama.rn')return {initLlama:async()=>({completion:async(p)=>{params=p;return {text}},stopCompletion:async()=>{},release:async()=>{},tokenize:async()=>({tokens:[]})})};
+  if(name==='llama.rn')return {initLlama:async()=>({completion:async(p)=>{params=p;if(text instanceof Error)throw text;return {text}},stopCompletion:async()=>{},release:async()=>{},tokenize:async()=>({tokens:[]})})};
   throw Error(name);
  });
  await api.loadLocalModel({id:'mock'},'mock.gguf',2048);
  return {api,params:()=>params};
 }
-test('uncertain search routing runs on local context with constrained JSON and no chat history',async()=>{
- const h=await harness('{"search":true}');
+test('uncertain search routing uses a short YES/NO pass without chat history or JSON schema',async()=>{
+ const h=await harness('YES');
  assert.equal(await h.api.shouldSearchWithLocalModel('Who leads this company?',h.api.DEFAULT_INFERENCE_SETTINGS),true);
- const p=h.params();assert.equal(p.response_format.type,'json_schema');assert.equal(p.temperature,0);assert.equal(p.n_predict,48);
- assert.equal(p.messages.length,2);assert.match(p.messages[0].content,/timeless definitions/);assert.match(p.messages[0].content,/historical office holders/);assert.match(p.messages[0].content,/explicitly requests web search/);assert.equal(p.messages[1].content,'Who leads this company?');
+ const p=h.params();assert.equal(p.response_format,undefined);assert.equal(p.temperature,0);assert.equal(p.n_predict,16);
+ assert.equal(p.messages.length,2);assert.match(p.messages[0].content,/timeless definitions/);assert.match(p.messages[0].content,/historical office holders/);assert.match(p.messages[0].content,/explicitly requested web search/);assert.equal(p.messages[1].content,'Who leads this company?');
 });
-test('invalid local routing output fails closed',async()=>{
+test('invalid local routing output falls back to local without failing the turn',async()=>{
  const h=await harness('Perhaps search the web.');
- await assert.rejects(h.api.shouldSearchWithLocalModel('Question',h.api.DEFAULT_INFERENCE_SETTINGS),/Could not decide/);
+ assert.equal(await h.api.shouldSearchWithLocalModel('Question',h.api.DEFAULT_INFERENCE_SETTINGS),false);
 });
 test('timeless routing result and pre-aborted decision',async()=>{
- const h=await harness('{"search":false}');
+ const h=await harness('NO');
  assert.equal(await h.api.shouldSearchWithLocalModel('Explain recursion',h.api.DEFAULT_INFERENCE_SETTINGS),false);
  const c=new AbortController();c.abort();
  await assert.rejects(h.api.shouldSearchWithLocalModel('Question',h.api.DEFAULT_INFERENCE_SETTINGS,c.signal),e=>e.name==='GenerationStoppedError');
@@ -103,4 +103,15 @@ test('search rollout flag behaves identically in Dev and production', () => {
  assert.equal(preference('true'),true);
  assert.equal(preference('false'),false);
  assert.equal(preference('malformed'),false);
+});
+
+test('routing parses leading YES/NO with a short second line but rejects ambiguous or reasoning-only text', async () => {
+ const h=await harness('YES');
+ for(const text of ['YES', 'yes.', 'Decision: YES\nNeeds fresh information.', '<think>maybe no</think>\nYES']) assert.equal(h.api.parseSearchDecision(text),true,text);
+ for(const text of ['NO', 'No. A timeless concept.', 'Answer: NO\nCan answer locally.']) assert.equal(h.api.parseSearchDecision(text),false,text);
+ for(const text of ['Perhaps yes.', 'YES or NO', '', '<think>YES', 'I think it needs verification']) assert.equal(h.api.parseSearchDecision(text),null,text);
+});
+test('native routing failure falls back to a local answer instead of a decision error', async () => {
+ const h=await harness(new Error('Native routing failed'));
+ assert.equal(await h.api.shouldSearchWithLocalModel('Question',h.api.DEFAULT_INFERENCE_SETTINGS),false);
 });

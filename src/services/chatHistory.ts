@@ -1,3 +1,5 @@
+import { plainChatPreview } from './chatPreview';
+
 type HistoryChat = {
   id: string;
   origin?: 'dev' | 'production';
@@ -19,11 +21,16 @@ export function restoreChatMetadata<T extends HistoryChat>(chat: T) {
   return { ...chat, createdAt, updatedAt };
 }
 
+/** Human-readable titles come from the first user turn; UUIDs remain storage keys. */
+export function conversationTitle(chat: Pick<HistoryChat, 'messages'>, limit = 48): string {
+  const first = chat.messages.find(message => message.role === 'user');
+  const text = plainChatPreview(first?.content.trim() || first?.attachments?.[0]?.name || 'New chat');
+  const characters = Array.from(text);
+  return characters.slice(0, limit).join('') + (characters.length > limit ? '…' : '');
+}
+
 export function chatHistoryLabels(chat: HistoryChat) {
-  const first = chat.messages.find((message) => message.role === 'user');
-  const preview = (first?.content.trim() || first?.attachments?.[0]?.name || 'New chat').replace(/\s+/g, ' ');
-  const characters = Array.from(preview);
-  const title = characters.slice(0, 24).join('') + (characters.length > 24 ? '…' : '');
+  const title = conversationTitle(chat);
   const timestamp = validTimestamp(chat.createdAt);
   const date = timestamp ? new Date(timestamp) : null;
   return {

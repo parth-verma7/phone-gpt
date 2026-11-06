@@ -7,7 +7,6 @@ import { DEFAULT_INFERENCE_SETTINGS, GenerationStoppedError, generateLocalReply,
 import { cancelModelDownload, deleteInstalledModel, downloadModel, formatBytes, getInstalledModelPath, getModelDownloadState, ModelDownloadCancelledError, models, type ModelDefinition, type ModelDownloadState } from './src/services/models';
 import { MessageContent } from './src/components/MessageContent';
 import { AppIcon } from './src/components/AppIcon';
-import { PhoneGptLogo } from './src/components/PhoneGptLogo';
 import { WelcomeHome } from './src/components/WelcomeHome';
 import { ProviderGroup, groupModelsByProvider } from './src/components/ProviderGroup';
 import { PaperclipIcon } from './src/components/PaperclipIcon';
@@ -15,12 +14,11 @@ import { messagesForInference, migrateChatAttachments, persistTextAttachment, re
 import { createChatId, ensureChatUuid } from './src/services/chatIds';
 import { startNewConversation } from './src/services/chatNavigation';
 import { pickTextDocument } from './src/services/documentPicker';
-import { chatHistoryLabels, restoreChatMetadata } from './src/services/chatHistory';
+import { conversationTitle, restoreChatMetadata } from './src/services/chatHistory';
 import { AppThemeProvider, useAppTheme, type ThemeColors } from './src/theme/AppTheme';
 import { useSystemPromptSettings } from './src/hooks/useSystemPromptSettings';
 import { AppInfo } from './src/components/AppInfo';
 import { ChatModelSelector } from './src/components/ChatModelSelector';
-import { NavigationDrawer } from './src/components/NavigationDrawer';
 import { useVoiceTyping } from './src/hooks/useVoiceTyping';
 import { appendTranscript } from './src/services/voice';
 import { VoiceModels } from './src/components/VoiceModels';
@@ -31,10 +29,8 @@ import { LiveDraftEditor } from './src/services/liveDraft';
 import { FontScaleProvider } from './src/theme/FontScale';
 import { DownloadControls } from './src/components/DownloadControls';
 import { NewChatButton } from './src/components/NewChatButton';
-import { DeleteChatButton } from './src/components/DeleteChatButton';
 import { removeChatFiles } from './src/services/deleteChat';
 import { ChatExport } from './src/components/ChatExport';
-import { ChatHistorySearch } from './src/components/ChatHistorySearch';
 import { TokenLimitControl } from './src/components/TokenLimitControl';
 import { availableReplyTokens, MIN_CONTEXT_TOKENS, MIN_REPLY_TOKENS, UNKNOWN_CONTEXT_LIMIT, normalizeTokenSettings, replyLimit } from './src/services/tokenLimits';
 import { WEB_SEARCH_FEATURE_ENABLED, restoreWebPreference } from './src/config/webSearch';
@@ -47,17 +43,19 @@ import { WebSources } from './src/components/WebSources';
 import { resolveWebUsage, webUsageTotal, type WebContextUsage, type WebTurnUsage } from './src/services/webContextUsage';
 import { WebSearchOverlay } from './src/components/WebSearchOverlay';
 import { CONTROL, controlSurface } from './src/theme/controlStyles';
+import { ChatsScreen } from './src/components/ChatsScreen';
+import { BottomTabs } from './src/components/BottomTabs';
 import { SettingsContent } from './src/components/SettingsContent';
 import { ActionButton, DownloadStatus } from './src/components/UiKit';
 import { ScaledText as Text, ScaledTextInput } from './src/components/ScaledText';
 
-type Screen = 'home' | 'chat' | 'models' | 'settings' | 'info';
+type Screen = 'home' | 'chats' | 'chat' | 'models' | 'settings' | 'info';
 type Role = 'user' | 'assistant';
 type Message = { id: string; role: Role; content: string; attachments?: TextAttachment[]; web?: WebSearchProvenance; contextUsage?: WebContextUsage };
-type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; origin?: 'dev' | 'production' };
+type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; modelId?: string; origin?: 'dev' | 'production' };
 type ModelStatus = 'checking' | 'paused' | 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
 
-const APP_VERSION = 'v0.5.8';
+const APP_VERSION = 'v0.5.9';
 const MODEL_GROUPS = groupModelsByProvider(models);
 const STORAGE_KEY = '@phone-gpt/chats';
 const INFERENCE_SETTINGS_KEY = '@phone-gpt/inference-settings';
@@ -88,11 +86,7 @@ function PhoneGptApp() {
   const selectedModelRef = useRef<ModelDefinition>(models[0]);
   const downloadingModelIds = useRef(new Set<string>());
   const downloadProgressByModel = useRef(new Map<string, number>());
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const pendingSearch = useRef(false);
-  const pendingExport = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
   const switchingChatModel = useRef(false);
   const [isSwitchingChatModel, setIsSwitchingChatModel] = useState(false);
@@ -122,6 +116,7 @@ function PhoneGptApp() {
     historyWrites.current = write;
     return write;
   }, []);
+  const conversationDrafts = useRef(new Map<string, { message: string; attachedText: TextAttachment | null }>());
   const [draftChatId, setDraftChatId] = useState(createChatId);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -173,7 +168,7 @@ function PhoneGptApp() {
   const [webTurnUsage, setWebTurnUsage] = useState<WebTurnUsage | null>(null);
   const [modelLimits, setModelLimits] = useState<{ modelId: string; maxContextTokens: number | null } | null>(null);
   const [inferenceSettingsReady, setInferenceSettingsReady] = useState(false);
-  const voice = useVoiceTyping(`${screen}:${drawerOpen}:${currentChat?.id ?? draftChatId}`, (text, liveId) => {
+  const voice = useVoiceTyping(`${screen}:${currentChat?.id ?? draftChatId}`, (text, liveId) => {
     const next = liveId ? liveDraft.current.update(draftRef.current, liveId, text) : appendTranscript(draftRef.current, text);
     draftRef.current = next;
     setMessage(next);
@@ -197,49 +192,22 @@ function PhoneGptApp() {
   const liveModelState = useRef({ modelStatus, isGenerating });
   liveModelState.current = { modelStatus, isGenerating };
 
-  const closeDrawer = () => { pendingExport.current = false; pendingSearch.current = false; setDrawerOpen(false); };
-  const openDrawer = () => { pendingExport.current = false; pendingSearch.current = false; setDrawerOpen(true); };
-  const openHistorySearch = () => {
-    if (isGenerating || voice.busy || isPickingFile) return;
-    Keyboard.dismiss();
-    refocusAfterGeneration.current = false;
-    if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort();
-    setModelSelectorOpen(false);
-    pendingExport.current = false;
-    pendingSearch.current = true;
-    setDrawerOpen(false);
-  };
   const openChatExport = () => {
     if (isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded) return;
     Keyboard.dismiss();
-    pendingSearch.current = false;
-    pendingExport.current = true;
-    setDrawerOpen(false);
+    setModelSelectorOpen(false);
+    setExportOpen(true);
   };
-  const onDrawerExited = () => {
-    if (pendingExport.current) { pendingExport.current = false; setExportOpen(true); return; }
-    if (!pendingSearch.current) return;
-    pendingSearch.current = false;
-    setSearchOpen(true);
-  };
-
   const handleBackPress = useCallback(() => {
-    if (pendingExport.current) { pendingExport.current = false; return true; }
-    if (pendingSearch.current) { pendingSearch.current = false; return true; }
-    if (searchOpen) { setSearchOpen(false); return true; }
+    if (exportOpen) { setExportOpen(false); return true; }
     if (modelSelectorOpen) { setModelSelectorOpen(false); return true; }
-    if (!drawerOpen && screen === 'home') return false;
+    if (screen === 'home') return false;
     if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort();
     Keyboard.dismiss();
     refocusAfterGeneration.current = false;
-    if (drawerOpen) {
-      setDrawerOpen(false);
-      setScreen('chat');
-    } else {
-      setScreen(screen === 'chat' ? 'home' : 'chat');
-    }
+    setScreen(screen === 'info' ? 'settings' : screen === 'chat' ? 'chats' : 'home');
     return true;
-  }, [drawerOpen, screen, modelSelectorOpen, searchOpen]);
+  }, [screen, modelSelectorOpen, exportOpen]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -251,7 +219,7 @@ function PhoneGptApp() {
     AsyncStorage.getItem(STORAGE_KEY)
       .then(async (savedChats) => {
         if (!savedChats) return;
-        const restored = (JSON.parse(savedChats) as Chat[]).map(restoreChatMetadata).map(ensureChatUuid);
+        const restored = (JSON.parse(savedChats) as Chat[]).map(restoreChatMetadata).map(ensureChatUuid).map(chat => ({ ...chat, title: conversationTitle(chat) }));
         // Preserve a conversation if storage is temporarily unavailable; retry
         // its legacy attachment migration on the next launch.
         setChats(await Promise.all(restored.map((chat) => migrateChatAttachments(chat).catch(() => chat))));
@@ -387,11 +355,11 @@ function PhoneGptApp() {
   // Keep the existing post-response focus behavior, after the response render
   // and any voice operation have settled.
   useEffect(() => {
-    if (isGenerating || voice.busy || searchOpen || drawerOpen || screen !== 'chat' || !refocusAfterGeneration.current) return;
+    if (isGenerating || voice.busy || exportOpen || screen !== 'chat' || !refocusAfterGeneration.current) return;
     refocusAfterGeneration.current = false;
     const timer = setTimeout(() => messageInputRef.current?.focus(), 180);
     return () => clearTimeout(timer);
-  }, [isGenerating, voice.busy, searchOpen, drawerOpen, screen]);
+  }, [isGenerating, voice.busy, exportOpen, screen]);
 
   useEffect(() => {
     let active = true;
@@ -405,14 +373,29 @@ function PhoneGptApp() {
     return () => { if (WEB_SEARCH_FEATURE_ENABLED) generationAbort.current?.abort(); };
   }, []);
 
-  const go = (next: Screen) => { if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort(); pendingExport.current = false; pendingSearch.current = false; setExportOpen(false); setSearchOpen(false); setModelSelectorOpen(false); setScreen(next); setDrawerOpen(false); };
+  const go = (next: Screen) => { if (webRequestActive.current && generationInFlight.current) generationAbort.current?.abort(); Keyboard.dismiss(); refocusAfterGeneration.current = false; setExportOpen(false); setModelSelectorOpen(false); setScreen(next); };
+  const rememberDraft = () => conversationDrafts.current.set(currentChat?.id ?? draftChatId, { message: draftRef.current, attachedText });
+  const openConversation = (chat: Chat) => {
+    if (voice.busy || isPickingFile || isDeletingChat || isSwitchingChatModel || (generationInFlight.current && currentChat?.id !== chat.id)) return;
+    if (currentChat?.id !== chat.id) {
+      rememberDraft();
+      const draft = conversationDrafts.current.get(chat.id);
+      setCurrentChat(chat);
+      draftRef.current = draft?.message ?? '';
+      setMessage(draft?.message ?? '');
+      setAttachedText(draft?.attachedText ?? null);
+    }
+    go('chat');
+  };
   const newChat = () => {
     if (isGenerating || voice.busy || isSwitchingChatModel || isPickingFile) return;
+    rememberDraft();
     const state = { currentChat, draftChatId, message, attachedText };
     const next = startNewConversation(state, createChatId);
     if (next !== state) {
       setCurrentChat(next.currentChat);
       setDraftChatId(next.draftChatId);
+      draftRef.current = next.message;
       setMessage(next.message);
       setAttachedText(next.attachedText);
     }
@@ -434,6 +417,7 @@ function PhoneGptApp() {
       await persistHistory(remaining);
       chatsRef.current = remaining;
       setChats(remaining);
+      conversationDrafts.current.delete(chat.id);
       if (currentChatRef.current?.id === chat.id) {
         currentChatRef.current = null;
         setCurrentChat(null);
@@ -441,6 +425,7 @@ function PhoneGptApp() {
         draftRef.current = '';
         setMessage('');
         setAttachedText(null);
+        setScreen('chats');
       }
     } finally {
       chatDeletionInFlight.current = false;
@@ -490,7 +475,6 @@ function PhoneGptApp() {
         lastLoaded.remember(model);
         setModelStatus('ready');
         setModelProgress(1);
-        pendingSearch.current = false;
         setScreen('chat');
       }
     } catch (error) {
@@ -615,7 +599,7 @@ function PhoneGptApp() {
 
   const saveChat = (updatedChat: Chat, activate = true) => {
     const now = Date.now();
-    updatedChat = { ...updatedChat, createdAt: updatedChat.createdAt ?? now, updatedAt: now };
+    updatedChat = { ...updatedChat, title: conversationTitle(updatedChat), createdAt: updatedChat.createdAt ?? now, updatedAt: now };
     setChats((items) => {
       const existing = items.some((chat) => chat.id === updatedChat.id);
       return existing ? items.map((chat) => chat.id === updatedChat.id ? updatedChat : chat) : [updatedChat, ...items];
@@ -635,7 +619,7 @@ function PhoneGptApp() {
     const useWebForTurn = WEB_SEARCH_FEATURE_ENABLED && webPreferenceReady && (webEnabled || explicitlyRequestsWebSearch(cleanMessage));
     if ((!cleanMessage && !attachedText) || chatDeletionInFlight.current || generationInFlight.current || voice.isActive() || voice.busy || isGenerating || isPickingFile || switchingChatModel.current || !promptSettings.ready) return;
     if (modelStatus !== 'ready') {
-      Alert.alert('Model not ready', 'Choose a downloaded model above, or download one from Menu → Models.');
+      Alert.alert('Model not ready', 'Choose a downloaded model above, or download one from the Models tab.');
       return;
     }
     generationInFlight.current = true;
@@ -656,8 +640,8 @@ function PhoneGptApp() {
 
     const userMessage: Message = { id: `${Date.now()}-user`, role: 'user', content: cleanMessage, ...(attachedText ? { attachments: [attachedText] } : {}) };
     const nextChat: Chat = currentChat
-      ? { ...currentChat, messages: [...currentChat.messages, userMessage] }
-      : { id: draftChatId, title: draftChatId, messages: [userMessage], createdAt: Date.now(), systemPrompt: promptSettings.savedPrompt, origin: __DEV__ ? 'dev' : 'production' };
+      ? { ...currentChat, modelId: selectedModel.id, messages: [...currentChat.messages, userMessage] }
+      : { id: draftChatId, title: conversationTitle({ messages: [userMessage] }), modelId: selectedModel.id, messages: [userMessage], createdAt: Date.now(), systemPrompt: promptSettings.savedPrompt, origin: __DEV__ ? 'dev' : 'production' };
 
     let turnSettings = inferenceSettings;
     // Count every input, including the hidden prompt and attached file content.
@@ -688,6 +672,7 @@ function PhoneGptApp() {
     // Preserve any edits made while asynchronous file/prompt validation ran.
     if (draftRef.current === submittedDraft) draftRef.current = '';
     setMessage((current) => current === submittedDraft ? '' : current);
+    conversationDrafts.current.delete(nextChat.id);
     setAttachedText(null);
     // Sending is an explicit request to return to the newest message. Do not
     // depend only on content-height changes (or an earlier drag's follow flag).
@@ -804,9 +789,10 @@ function PhoneGptApp() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardContainer}>
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
-        {screen === 'home' && <SimpleScreen title={__DEV__ ? 'PhoneGPT Dev' : 'PhoneGPT'} onMenu={openDrawer}><WelcomeHome version={APP_VERSION} onChat={() => go('chat')} onModels={() => go('models')} /></SimpleScreen>}
-        {screen === 'chat' && <View style={styles.screen} aria-hidden={searchOpen} accessibilityElementsHidden={searchOpen} importantForAccessibility={searchOpen ? 'no-hide-descendants' : 'auto'}>
-          <View style={styles.topBar}><Pressable accessibilityRole="button" accessibilityLabel="Open menu" hitSlop={10} onPress={() => { setModelSelectorOpen(false); openDrawer(); }} style={styles.iconButton}><AppIcon name="menu" color={colors.text} /></Pressable><View style={{ flex: 1, minWidth: 0, paddingVertical: 8 }}><Text selectable style={{ color: colors.text, fontSize: 13, fontWeight: '700', lineHeight: 18 }}>{currentChat?.id ?? draftChatId}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 }}><Pressable accessibilityRole="button" accessibilityLabel="Choose downloaded model" accessibilityState={{ expanded: modelSelectorOpen, disabled: voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel }} disabled={voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel} onPress={() => { Keyboard.dismiss(); setModelSelectorOpen((open) => !open); }} style={({ pressed }) => [controlSurface(colors, voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel, pressed), { flexShrink: 1, minWidth: 0 }]} ><Text numberOfLines={1} style={{ color: colors.secondary, ...CONTROL.compactLabel, flexShrink: 1 }}>{modelStatus === 'ready' ? selectedModel.displayName : modelStatus === 'loading' || isSwitchingChatModel ? `Loading ${selectedModel.displayName}…` : 'Choose downloaded model'}</Text><View style={{ transform: [{ rotate: modelSelectorOpen ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.secondary} size={15} /></View></Pressable>{WEB_SEARCH_FEATURE_ENABLED && <WebSearchControls enabled={webEnabled} onToggle={toggleWebSearch} disabled={!webPreferenceReady || isGenerating || voice.busy} />}</View></View><NewChatButton onPress={newChat} disabled={isGenerating || voice.busy || isSwitchingChatModel} /></View>
+        {screen === 'home' && <SimpleScreen title={__DEV__ ? 'PhoneGPT Dev' : 'PhoneGPT'}><WelcomeHome version={APP_VERSION} onChat={newChat} onModels={() => go('models')} /></SimpleScreen>}
+        {screen === 'chats' && <ChatsScreen chats={chats} ready={historyLoaded} busy={isGenerating || voice.busy || isPickingFile || isDeletingChat || isSwitchingChatModel} activeChatId={currentChat?.id} onSelect={openConversation} onNewChat={newChat} onModels={() => go('models')} onExport={openChatExport} onDelete={deleteChat} version={APP_VERSION} modelName={id => models.find(model => model.id === id)?.displayName} />}
+        {screen === 'chat' && <View style={styles.screen}>
+          <View style={styles.topBar}><Pressable accessibilityRole="button" accessibilityLabel="Back to chats" hitSlop={10} onPress={() => { handleBackPress(); }} style={styles.iconButton}><AppIcon name="back" color={colors.text} /></Pressable><View style={{ flex: 1, minWidth: 0, paddingVertical: 8 }}><Text numberOfLines={1} style={{ color: colors.text, fontSize: 17, fontWeight: '700', lineHeight: 18 }}>{currentChat ? conversationTitle(currentChat) : 'New chat'}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 }}><Pressable accessibilityRole="button" accessibilityLabel="Choose downloaded model" accessibilityState={{ expanded: modelSelectorOpen, disabled: voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel }} disabled={voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel} onPress={() => { Keyboard.dismiss(); setModelSelectorOpen((open) => !open); }} style={({ pressed }) => [controlSurface(colors, voice.busy || isGenerating || modelStatus === 'loading' || isSwitchingChatModel, pressed), { flexShrink: 1, minWidth: 0 }]} ><Text numberOfLines={1} style={{ color: colors.secondary, ...CONTROL.compactLabel, flexShrink: 1 }}>{modelStatus === 'ready' ? selectedModel.displayName : modelStatus === 'loading' || isSwitchingChatModel ? `Loading ${selectedModel.displayName}…` : 'Choose downloaded model'}</Text><View style={{ transform: [{ rotate: modelSelectorOpen ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.secondary} size={15} /></View></Pressable>{WEB_SEARCH_FEATURE_ENABLED && <WebSearchControls enabled={webEnabled} onToggle={toggleWebSearch} disabled={!webPreferenceReady || isGenerating || voice.busy} />}</View></View><NewChatButton onPress={newChat} disabled={isGenerating || voice.busy || isSwitchingChatModel} /></View>
           <ChatModelSelector open={modelSelectorOpen} onClose={() => setModelSelectorOpen(false)} onSelect={switchChatModel} loadedModelId={modelStatus === 'ready' ? selectedModel.id : undefined} />
           {lastLoaded.model && modelStatus !== 'ready' && (modelStatus !== 'loading' || selectedModel.id === lastLoaded.model.id) && <View style={{ marginHorizontal: 16, marginVertical: 8, padding: 12, borderRadius: 12, backgroundColor: colors.surface, gap: 8 }}>
             <Text style={{ color: colors.secondary, fontSize: 13 }}>{modelStatus === 'loading' || isSwitchingChatModel ? 'Loading model…' : 'No model loaded'}</Text>
@@ -847,33 +833,26 @@ function PhoneGptApp() {
             {voice.busy && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}><Text accessibilityLiveRegion="polite" style={{ color: colors.secondary, flexShrink: 1 }}>{voice.status === 'recording' ? (voice.mode === 'live' ? 'Live transcription' : 'Recording') : voice.status === 'starting' ? (voice.mode === 'live' ? 'Preparing live transcription…' : 'Starting microphone…') : voice.status === 'cancelling' ? 'Cancelling…' : (voice.mode === 'live' ? 'Updating transcript…' : `Transcribing locally… ${Math.round(voice.progress)}%`)}</Text>{voice.status === 'recording' && <AudioLevelMeter level={voice.audioLevel} />}<Pressable accessibilityRole="button" accessibilityLabel="Cancel voice typing" disabled={voice.status === 'cancelling'} onPress={() => { void voice.cancel(); }} style={{ padding: 8 }}><Text style={{ color: colors.error }}>Cancel</Text></Pressable></View>}
             {attachedText && <View style={styles.attachmentRow}><Text numberOfLines={1} style={[styles.attachmentText, { flexShrink: 1 }]}>{attachedText.name}</Text><Pressable accessibilityLabel="Remove text attachment" disabled={isGenerating || isPickingFile} onPress={() => setAttachedText(null)}><Text style={styles.attachmentRemove}>×</Text></Pressable></View>}<View style={styles.composer}>
             <Pressable accessibilityRole="button" accessibilityLabel="Attach text file" accessibilityHint="Choose a .txt file up to 32 KB" disabled={isGenerating || isPickingFile} onPress={() => { void pickTextFile(); }} style={[styles.imageButton, (isGenerating || isPickingFile) && styles.imageButtonDisabled]}><PaperclipIcon /></Pressable>
-            <ScaledTextInput ref={messageInputRef} value={message} onChangeText={editMessage} placeholder={isPickingFile ? 'Reading text file…' : isGenerating ? 'Write your next message…' : modelStatus === 'ready' ? 'Ask PhoneGPT' : 'Download a model from Menu → Models'} placeholderTextColor={colors.muted} keyboardAppearance={isDark ? 'dark' : 'light'} style={styles.input} multiline textAlignVertical="center" editable={!isPickingFile} />
+            <ScaledTextInput ref={messageInputRef} value={message} onChangeText={editMessage} placeholder={isPickingFile ? 'Reading text file…' : isGenerating ? 'Write your next message…' : modelStatus === 'ready' ? 'Ask PhoneGPT' : 'Download a model from the Models tab'} placeholderTextColor={colors.muted} keyboardAppearance={isDark ? 'dark' : 'light'} style={styles.input} multiline textAlignVertical="center" editable={!isPickingFile} />
             <Pressable accessibilityRole="button" accessibilityLabel={voice.status === 'recording' ? 'Stop recording and transcribe' : `Start voice typing${voice.model ? ` with ${voice.model.displayName}` : ''}`} accessibilityHint="English transcription is appended to your draft" disabled={isGenerating || isPickingFile || !voice.ready || (voice.busy && voice.status !== 'recording') || isSwitchingChatModel || modelStatus === 'loading'} onPress={() => { if (voice.status === 'recording') void voice.stop(); else if (!generationInFlight.current) void voice.start(); }} style={[styles.imageButton, (isGenerating || isPickingFile || !voice.ready || (voice.busy && voice.status !== 'recording')) && styles.imageButtonDisabled, voice.status === 'recording' && { backgroundColor: colors.errorSurface }]}><MicrophoneIcon stop={voice.status === 'recording'} color={voice.status === 'recording' ? colors.error : colors.text} /></Pressable>
             {isGenerating ? <Pressable accessibilityRole="button" accessibilityLabel={isStopping ? 'Stopping generation' : 'Stop generating'} accessibilityHint="Keeps the reply generated so far" accessibilityState={{ disabled: isStopping, busy: isStopping }} disabled={isStopping} onPress={stopGeneration} style={[styles.sendButton, { backgroundColor: colors.errorSurface }]}>{isStopping ? <ActivityIndicator color={colors.error} size="small" /> : <AppIcon name="stop" color={colors.error} />}</Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={isDeletingChat || (!message.trim() && !attachedText) || voice.busy || isGenerating || isPickingFile || isSwitchingChatModel || modelStatus === 'loading'} onPress={send} style={[styles.sendButton, (isDeletingChat || (!message.trim() && !attachedText) || voice.busy || isGenerating || isPickingFile || isSwitchingChatModel || modelStatus === 'loading') && styles.sendButtonDisabled]}><AppIcon name="up" color={colors.onPrimary} /></Pressable>}
           </View></View>
         </View>}
-        {screen === 'models' && <SimpleScreen title="Models" onMenu={openDrawer}><ScrollView style={styles.modelScroll} contentContainerStyle={styles.modelList}><View style={{ gap: 6, marginBottom: 10 }}><Text style={{ color: colors.text, fontSize: 22, fontWeight: '700' }}>Find your next model</Text><Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 20 }}>Download once, use offline. Expand a family to explore chat models, or choose Voice for dictation.</Text></View><VoiceModels selectedId={voice.selectedId} onSelect={voice.select} disabled={voice.busy || isGenerating || !voice.ready} /><Text style={styles.sectionLabel}>Chat models</Text>{MODEL_GROUPS.map((group) => <ProviderGroup key={group.name} name={group.name} count={group.models.length} >{group.sections.map((section) => <ProviderGroup key={section.name} name={section.name} count={section.models.length}>{section.models.map((model) => <View key={model.id} style={[styles.catalogCard, modelStatus === 'ready' && selectedModel.id === model.id && styles.catalogCardSelected]}><Pressable accessibilityRole="button" accessibilityLabel={`${model.displayName}${model.preferred ? ', Preferred' : ''}, model options`} accessibilityState={{ expanded: expandedModelId === model.id }} onPress={() => { void selectModel(model); }}><View style={styles.catalogHeader}><View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><Text style={[styles.modelName, { flexShrink: 1 }]}>{model.displayName}</Text>{model.preferred && <Text style={{ color: colors.primary, backgroundColor: colors.raised, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>Preferred</Text>}</View>{modelStatus === 'ready' && selectedModel.id === model.id && <Text style={styles.selectedText}>Selected</Text>}</View><Text style={styles.catalogProvider}>{model.provider}</Text><Text style={styles.catalogDetail}>{model.capabilities.join(' · ')} · {formatBytes(model.sizeBytes)}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>{expandedModelId === model.id ? 'Hide options' : 'Model options'}</Text><View style={{ transform: [{ rotate: expandedModelId === model.id ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.primary} size={16} /></View></View></Pressable>{expandedModelId === model.id && selectedModel.id === model.id && <View style={styles.modelExpansion}>{modelButton()}{modelControls}{modelError && <Text style={styles.errorText}>{modelError}</Text>}</View>}</View>)}</ProviderGroup>)}</ProviderGroup>)}</ScrollView></SimpleScreen>}
-        {screen === 'settings' && <SimpleScreen title="Settings" onMenu={openDrawer}><SettingsContent bottomInset={insets.bottom} promptSettings={promptSettings} modelControls={modelControls} /></SimpleScreen>}
-        {screen === 'info' && <SimpleScreen title="App Info" onMenu={openDrawer}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 32) }}><AppInfo version={APP_VERSION} /></ScrollView></SimpleScreen>}
-        <NavigationDrawer open={drawerOpen} onExited={onDrawerExited} onClose={closeDrawer} onRequestClose={() => { handleBackPress(); }}><SafeAreaView edges={['top', 'bottom', 'left']} style={styles.drawer}>
-          <View style={styles.drawerTop}><PhoneGptLogo size={32} /><Text style={[styles.drawerTitle, { flex: 1, marginLeft: 10 }]}>PhoneGPT</Text><Pressable accessibilityRole="button" accessibilityLabel="Close menu" style={styles.iconButton} hitSlop={10} onPress={closeDrawer}><AppIcon name="close" color={colors.secondary} /></Pressable></View>
-          <Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'home' }} onPress={() => go('home')} style={({ pressed }) => [styles.navItem, screen === 'home' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="home" color={screen === 'home' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'home' && { color: colors.primary }]}>Home</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'chat' }} onPress={newChat} style={({ pressed }) => [styles.navItem, screen === 'chat' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="chat" color={screen === 'chat' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'chat' && { color: colors.primary }]}>New chat</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'models' }} onPress={() => go('models')} style={({ pressed }) => [styles.navItem, screen === 'models' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="models" color={screen === 'models' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'models' && { color: colors.primary }]}>Models</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'settings' }} onPress={() => go('settings')} style={({ pressed }) => [styles.navItem, screen === 'settings' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="settings" color={screen === 'settings' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'settings' && { color: colors.primary }]}>Settings</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ selected: screen === 'info' }} onPress={() => go('info')} style={({ pressed }) => [styles.navItem, screen === 'info' && { backgroundColor: colors.raised }, pressed && { opacity: 0.65 }]}><AppIcon name="info" color={screen === 'info' ? colors.primary : colors.secondary} /><Text style={[styles.navText, screen === 'info' && { color: colors.primary }]}>App Info</Text></Pressable>
-          <View style={styles.divider} /><View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}><Text accessibilityRole="header" style={[styles.historyHeading, { marginBottom: 0 }]}>Chat History</Text><View style={{ flexDirection: 'row', gap: 6 }}><Pressable accessibilityRole="button" accessibilityLabel="Search chat history" accessibilityState={{ disabled: isGenerating || voice.busy || isPickingFile }} disabled={isGenerating || voice.busy || isPickingFile} onPress={openHistorySearch} style={({ pressed }) => [controlSurface(colors, isGenerating || voice.busy || isPickingFile, pressed), { width: 44, paddingHorizontal: 0 }]}><AppIcon name="search" color={colors.primary} size={20} /></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Export chat history" accessibilityState={{ disabled: isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded }} disabled={isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded} onPress={openChatExport} style={({ pressed }) => [controlSurface(colors, isGenerating || voice.busy || isPickingFile || isDeletingChat || !historyLoaded, pressed), { width: 44, paddingHorizontal: 0 }]}><AppIcon name="export" color={colors.primary} size={20} /></Pressable></View></View>{!chats.length && <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 19, paddingVertical: 12 }}>Your conversations will appear here after your first message.</Text>}<ScrollView contentContainerStyle={styles.historyList} showsVerticalScrollIndicator={false}>{chats.map((chat) => {
-            const labels = chatHistoryLabels(chat);
-            return <View key={chat.id} style={styles.historyItem}><Pressable accessibilityRole="button" accessibilityLabel={`${labels.title}, ${labels.date}, ${labels.time}`} onPress={() => { setCurrentChat(chat); setAttachedText(null); setMessage(''); go('chat'); }} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}><View style={styles.dot} /><Text numberOfLines={1} style={styles.historyText}>{labels.title}</Text><View style={{ alignItems: 'flex-end', flexShrink: 0, gap: 3 }}><Text style={{ color: colors.muted, fontSize: 10 }}>{labels.date}</Text><Text style={{ color: colors.muted, fontSize: 10 }}>{labels.time}</Text></View></Pressable><DeleteChatButton chatTitle={labels.title} disabled={isDeletingChat || isGenerating || voice.busy || isPickingFile || !historyLoaded} onConfirm={() => deleteChat(chat)} /></View>;
-          })}</ScrollView>
-        </SafeAreaView></NavigationDrawer>
+        {screen === 'models' && <SimpleScreen title="Models"><ScrollView style={styles.modelScroll} contentContainerStyle={styles.modelList}><View style={{ gap: 6, marginBottom: 10 }}><Text style={{ color: colors.text, fontSize: 22, fontWeight: '700' }}>Find your next model</Text><Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 20 }}>Download once, use offline. Expand a family to explore chat models, or choose Voice for dictation.</Text></View><VoiceModels selectedId={voice.selectedId} onSelect={voice.select} disabled={voice.busy || isGenerating || !voice.ready} /><Text style={styles.sectionLabel}>Chat models</Text>{MODEL_GROUPS.map((group) => <ProviderGroup key={group.name} name={group.name} count={group.models.length} >{group.sections.map((section) => <ProviderGroup key={section.name} name={section.name} count={section.models.length}>{section.models.map((model) => <View key={model.id} style={[styles.catalogCard, modelStatus === 'ready' && selectedModel.id === model.id && styles.catalogCardSelected]}><Pressable accessibilityRole="button" accessibilityLabel={`${model.displayName}${model.preferred ? ', Preferred' : ''}, model options`} accessibilityState={{ expanded: expandedModelId === model.id }} onPress={() => { void selectModel(model); }}><View style={styles.catalogHeader}><View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}><Text style={[styles.modelName, { flexShrink: 1 }]}>{model.displayName}</Text>{model.preferred && <Text style={{ color: colors.primary, backgroundColor: colors.raised, fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>Preferred</Text>}</View>{modelStatus === 'ready' && selectedModel.id === model.id && <Text style={styles.selectedText}>Selected</Text>}</View><Text style={styles.catalogProvider}>{model.provider}</Text><Text style={styles.catalogDetail}>{model.capabilities.join(' · ')} · {formatBytes(model.sizeBytes)}</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 }}><Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>{expandedModelId === model.id ? 'Hide options' : 'Model options'}</Text><View style={{ transform: [{ rotate: expandedModelId === model.id ? '180deg' : '0deg' }] }}><AppIcon name="chevron" color={colors.primary} size={16} /></View></View></Pressable>{expandedModelId === model.id && selectedModel.id === model.id && <View style={styles.modelExpansion}>{modelButton()}{modelControls}{modelError && <Text style={styles.errorText}>{modelError}</Text>}</View>}</View>)}</ProviderGroup>)}</ProviderGroup>)}</ScrollView></SimpleScreen>}
+        {screen === 'settings' && <SimpleScreen title="Settings"><SettingsContent bottomInset={insets.bottom} promptSettings={promptSettings} modelControls={modelControls} onAppInfo={() => go('info')} /></SimpleScreen>}
+        {screen === 'info' && <SimpleScreen title="App Info" onBack={() => go('settings')}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 32) }}><AppInfo version={APP_VERSION} /></ScrollView></SimpleScreen>}
+        {screen !== 'chat' && !keyboardVisible && <BottomTabs active={screen === 'info' ? 'settings' : screen} bottomInset={insets.bottom} onSelect={go} />}
         <ChatExport open={exportOpen} chats={chats} onClose={() => setExportOpen(false)} />
-        <ChatHistorySearch open={searchOpen} chats={chats} onDelete={deleteChat} deletingDisabled={isDeletingChat || isGenerating || voice.busy || isPickingFile || !historyLoaded} onClose={() => setSearchOpen(false)} onSelect={(chat) => { setCurrentChat(chat); setAttachedText(null); setMessage(''); go('chat'); }} />
+
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
 }
 
-function SimpleScreen({ title, onMenu, children }: { title: string; onMenu: () => void; children: React.ReactNode }) {
+function SimpleScreen({ title, onBack, children }: { title: string; onBack?: () => void; children: React.ReactNode }) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  return <View style={styles.screen}><View style={styles.topBar}><Pressable accessibilityRole="button" accessibilityLabel="Open menu" hitSlop={10} onPress={onMenu} style={styles.iconButton}><AppIcon name="menu" color={colors.text} /></Pressable><Text style={styles.title}>{title}</Text></View><View style={styles.pageContent}>{children}</View></View>;
+  return <View style={styles.screen}><View style={styles.topBar}>{onBack && <Pressable accessibilityRole="button" accessibilityLabel="Back to settings" hitSlop={10} onPress={onBack} style={styles.iconButton}><AppIcon name="back" color={colors.text} /></Pressable>}<Text style={styles.title}>{title}</Text></View><View style={styles.pageContent}>{children}</View></View>;
 }
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
@@ -881,6 +860,5 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   topBar: { zIndex: 5, minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }, iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: 6 }, menuIcon: { color: colors.text, fontSize: 25, lineHeight: 28 }, title: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '700' }, modelBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 34, paddingHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.surface }, modelStatusDot: { width: 7, height: 7, borderRadius: 4 }, modelStatusDotReady: { backgroundColor: colors.success }, modelStatusDotInactive: { backgroundColor: colors.muted }, modelBannerText: { flex: 1, color: colors.secondary, fontSize: 13, fontWeight: '600' }, contextBanner: { paddingHorizontal: 18, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background }, contextHeading: { gap: 8, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }, contextText: { flex: 1, color: colors.secondary, fontSize: 12, fontWeight: '700' }, contextPercent: { color: colors.secondary, fontSize: 12, fontWeight: '700' }, contextTrack: { height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: colors.track }, contextFill: { height: '100%', borderRadius: 2, backgroundColor: colors.fill }, contextHint: { color: colors.muted, fontSize: 10, marginTop: 4 },
   chatArea: { flexGrow: 1, paddingHorizontal: 16, paddingVertical: 18, justifyContent: 'center' }, messagesArea: { justifyContent: 'flex-start' }, versionText: { alignSelf: 'center', color: colors.muted, fontSize: 13, fontWeight: '600' }, generatingText: { alignSelf: 'flex-start', color: colors.secondary, fontSize: 14, fontWeight: '600', marginVertical: 8 }, messageBubble: { maxWidth: '92%', minWidth: 0, flexShrink: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 10 }, userBubble: { alignSelf: 'flex-end', maxWidth: '84%', backgroundColor: colors.userBubble, borderBottomRightRadius: 4 }, assistantBubble: { alignSelf: 'flex-start', width: '92%', backgroundColor: colors.assistantBubble, borderBottomLeftRadius: 4 }, messageText: { color: colors.text, fontSize: 16, lineHeight: 22 }, userMessageText: { color: colors.userText },
   composerWrap: { paddingHorizontal: 16, paddingTop: 8, backgroundColor: colors.background }, attachmentRow: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6, backgroundColor: colors.raised, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 5 }, attachmentText: { color: colors.secondary, fontSize: 12, fontWeight: '700' }, attachmentRemove: { color: colors.error, fontSize: 19, lineHeight: 19 }, composer: { minHeight: 56, maxHeight: 124, flexDirection: 'row', alignItems: 'flex-end', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingLeft: 6, paddingRight: 6, paddingVertical: 6 }, imageButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }, imageButtonDisabled: { opacity: 0.3 }, input: { flex: 1, alignSelf: 'stretch', color: colors.text, fontSize: 16, maxHeight: 104, paddingTop: 10, paddingBottom: 10 }, sendButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }, sendButtonDisabled: { backgroundColor: colors.disabled }, sendIcon: { color: colors.onPrimary, fontSize: 22, fontWeight: '700', marginTop: -2 },
-  drawer: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 }, drawerTop: { height: 68, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, drawerTitle: { color: colors.text, fontSize: 23, fontWeight: '800' }, closeIcon: { color: colors.text, fontSize: 30, lineHeight: 30 }, navItem: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, borderRadius: 12, marginBottom: 4, paddingVertical: 13, paddingHorizontal: 12 }, navText: { color: colors.text, fontSize: 15, fontWeight: '600' }, divider: { height: 1, backgroundColor: colors.border, marginTop: 18, marginBottom: 22 }, historyHeading: { color: colors.secondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 11 }, historyList: { paddingBottom: 24, gap: 4 }, historyItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 }, dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.muted }, historyText: { flex: 1, color: colors.secondary, fontSize: 15 },
   pageContent: { flex: 1, padding: 20 }, modelScroll: { flex: 1, marginHorizontal: -20 }, modelList: { padding: 20, gap: 10, paddingBottom: 36 }, sectionLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', marginBottom: 2 }, catalogCard: { borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, padding: 14, backgroundColor: colors.surface }, catalogCardSelected: { borderColor: colors.primary, borderWidth: 2 }, catalogHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, selectedText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700', backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }, catalogProvider: { color: colors.secondary, fontSize: 12, fontWeight: '700', marginTop: 4 }, catalogDetail: { color: colors.secondary, fontSize: 13, lineHeight: 18, marginTop: 4 }, expandText: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginTop: 12 }, modelExpansion: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginTop: 14, paddingTop: 14 }, modelCard: { borderWidth: 1, borderColor: colors.border, borderRadius: CONTROL.cardRadius, padding: 16 }, modelName: { color: colors.text, fontSize: 16, fontWeight: '700' }, modelDetail: { color: colors.secondary, fontSize: 14, marginTop: 5, marginBottom: 16 }, modelStatus: { color: colors.secondary, fontSize: 14 }, downloadRow: { flexDirection: 'row', alignItems: 'center', gap: 10 }, cancelButton: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.errorSurface, alignItems: 'center', justifyContent: 'center' }, cancelText: { color: colors.error, fontSize: 22, lineHeight: 25 }, primaryButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 }, primaryButtonText: { color: colors.onPrimary, fontSize: 14, fontWeight: '700' }, readyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 }, readyText: { color: colors.success, fontSize: 14, fontWeight: '700' }, deleteText: { color: colors.error, fontSize: 14, fontWeight: '700' }, modelControls: { gap: 2, paddingTop: 6 }, controlLabel: { color: colors.secondary, fontSize: 13, fontWeight: '700', marginBottom: 8 }, choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }, choiceButton: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.background }, choiceButtonActive: { borderColor: colors.text, backgroundColor: colors.primary }, choiceText: { color: colors.secondary, fontSize: 13, fontWeight: '700' }, choiceTextActive: { color: colors.onPrimary }, controlHint: { color: colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 12 }, errorText: { color: colors.error, fontSize: 13, marginTop: 12 }, placeholderText: { color: colors.secondary, fontSize: 16 },
 });

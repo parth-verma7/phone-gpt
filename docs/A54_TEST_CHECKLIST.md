@@ -94,3 +94,14 @@ These checks apply to source/Dev changes after standalone 0.5.5 was built.
 - During streaming scroll upward slightly and stay there; send a new message to resume following. Test Stop and draft typing.
 - Voice: speech/silence/speech must not insert BLANK_AUDIO; Stop flushes tail without duplicate text.
 - Export selected/all chats to a selectable Android subfolder and inspect ZIP.
+
+## 0.5.9 navigation acceptance
+
+- Confirm Home opens first and all four bottom tabs work. Chats must show existing history without any migration loss.
+- Titles use first user messages, not UUIDs; attachment-only chat uses its filename. Dates/time remain conversation start time after more replies.
+- Search inside old messages and observe highlighted readable snippets. Bold/list/code Markdown must not show decorative asterisks in normal previews; literal multiplication/code symbols remain.
+- Edit: select a few, Select all/clear, search within history, Cancel confirmation, then delete intentional test chats. No row trash buttons. Confirm unrelated chats/models stay intact.
+- Leave a draft, open another saved chat, return and verify draft/attachment retained. Repeated New chat on an empty draft must not replace it.
+- Chat back → Chats; Chats/Models/Settings back → Home; App Info back → Settings; Home back permits exit. Overlay Back closes only the overlay.
+- Web on is filled, off neutral. Test ambiguous everyday question, changing-fact question, explicit search, explicit no-search and Stop during routing/search. No malformed routing decision should fail the entire turn.
+- Recheck streaming scroll priority, typing and Stop, native keyboard safe areas, voice cleanup and export folder flow.

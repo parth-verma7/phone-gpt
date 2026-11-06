@@ -12,8 +12,8 @@ export function NewChatButton({ onPress, disabled }: { onPress: () => void; disa
     <Pressable accessibilityRole="button" accessibilityLabel="Start a new chat" accessibilityHint="Opens an empty conversation" accessibilityState={{ disabled }} disabled={disabled}
       onHoverIn={() => setHint(true)} onHoverOut={() => setHint(false)} onFocus={() => setHint(true)} onBlur={() => setHint(false)} onLongPress={() => setHint(true)} onPressOut={() => setHint(false)}
       onPress={() => { setHint(false); onPress(); }}
-      style={({ pressed }) => [controlSurface(colors, disabled, pressed), { width: CONTROL.height, height: CONTROL.height, paddingHorizontal: 0 }]} >
-      <AppIcon name="plus" color={colors.primary} />
+      style={({ pressed }) => [controlSurface(colors, disabled, pressed), { width: CONTROL.height, height: CONTROL.height, paddingHorizontal: 0, backgroundColor: colors.primary, borderColor: colors.primary }]} >
+      <AppIcon name="plus" color={colors.onPrimary} />
     </Pressable>
     {hint && <View pointerEvents="none" style={{ position: 'absolute', right: 0, top: 46, minWidth: 140, padding: 9, borderRadius: 8, backgroundColor: colors.text, zIndex: 10 }}><Text style={{ color: colors.background, fontSize: 12 }}>Start a new chat</Text></View>}
   </View>;

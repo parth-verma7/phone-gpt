@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
 import { ScrollView, Switch, View } from 'react-native';
 import { useAppTheme } from '../theme/AppTheme';
-import { SettingsCard } from './UiKit';
+import { ActionButton, SettingsCard } from './UiKit';
 import { FontSizeSettings } from './FontSizeSettings';
 import { ThemeColorSettings } from './ThemeColorSettings';
 import { SystemPromptSettings } from './SystemPromptSettings';
 import type { useSystemPromptSettings } from '../hooks/useSystemPromptSettings';
 import { ScaledText as Text } from './ScaledText';
 
-export function SettingsContent({ bottomInset, promptSettings, modelControls }: {
-  bottomInset: number; promptSettings: ReturnType<typeof useSystemPromptSettings>; modelControls: ReactNode;
+export function SettingsContent({ bottomInset, promptSettings, modelControls, onAppInfo }: {
+  bottomInset: number; promptSettings: ReturnType<typeof useSystemPromptSettings>; modelControls: ReactNode; onAppInfo?: () => void;
 }) {
   const { colors, isDark, setDarkMode, ready } = useAppTheme();
   return <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 16, paddingBottom: Math.max(bottomInset, 24) }}>
@@ -21,6 +21,7 @@ export function SettingsContent({ bottomInset, promptSettings, modelControls }: 
       </View>
       <ThemeColorSettings />
     </SettingsCard>
+    {onAppInfo && <SettingsCard title="About PhoneGPT" icon="info" description="App information, privacy and a way to get in touch."><ActionButton label="App info & contact" icon="info" onPress={onAppInfo} /></SettingsCard>}
     <FontSizeSettings />
     <SystemPromptSettings settings={promptSettings} />
     <SettingsCard title="Generation" icon="settings" description="Adjust replies and memory. Larger limits use more time and phone memory.">{modelControls}</SettingsCard>

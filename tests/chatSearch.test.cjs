@@ -18,7 +18,7 @@ function load(relativePath, dependencies = {}) {
   return exports;
 }
 
-const history = load('src/services/chatHistory.ts');
+const history = load('src/services/chatHistory.ts', { './chatPreview': load('src/services/chatPreview.ts') });
 const search = load('src/services/chatSearch.ts', { './chatHistory': history });
 const { searchChats, highlightMatches, findLiteralMatches, searchSnippet } = search;
 const plain = (value) => JSON.parse(JSON.stringify(value));

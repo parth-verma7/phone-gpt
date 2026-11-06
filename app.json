@@ -2,7 +2,7 @@
   "expo": {
     "name": "PhoneGPT",
     "slug": "phone-gpt",
-    "version": "0.5.8",
+    "version": "0.5.9",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
@@ -28,7 +28,7 @@
     "icon": "./assets-phonegpt-icon.png",
     "ios": {
       "bundleIdentifier": "com.phonegpt.app",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "supportsTablet": false,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "PhoneGPT records your voice to transcribe it locally on your device.",

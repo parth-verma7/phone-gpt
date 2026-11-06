@@ -18,9 +18,9 @@ export function WebSearchControls({ enabled, onToggle, disabled = false }: WebSe
     accessibilityState={{ checked: enabled, disabled }}
     onPress={onToggle}
     disabled={disabled}
-    style={({ pressed }) => [controlSurface(colors, disabled, pressed), { flexShrink: 0 }]}
+    style={({ pressed }) => [controlSurface(colors, disabled, pressed), { flexShrink: 0, backgroundColor: enabled ? colors.primary : colors.surface, borderColor: enabled ? colors.primary : colors.border }]}
   >
-    <AppIcon name="search" size={16} color={enabled ? colors.primary : colors.secondary} />
-    <Text style={{ color: enabled ? colors.primary : colors.secondary, ...CONTROL.compactLabel }}>Web {enabled ? 'on' : 'off'}</Text>
+    <AppIcon name="search" size={16} color={enabled ? colors.onPrimary : colors.secondary} />
+    <Text style={{ color: enabled ? colors.onPrimary : colors.secondary, ...CONTROL.compactLabel }}>Web {enabled ? 'on' : 'off'}</Text>
   </Pressable>;
 }

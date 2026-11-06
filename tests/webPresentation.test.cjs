@@ -50,3 +50,19 @@ test('active search input is visible before the first reply and stays scoped to 
  const restored={id:'chat-a',messages:[{id:'answer',contextUsage:JSON.parse(JSON.stringify(finished))}]};
  assert.equal(usage.webUsageTotal(usage.resolveWebUsage(restored,null,'qwen',2048)),828);
 });
+
+test('Web on is a filled accent control and off is a neutral surface with explicit switch state',()=>{
+ const jsx=(type,props)=>({type,props});
+ const colors={primary:'accent',onPrimary:'on-accent',surface:'surface',raised:'raised',border:'border',secondary:'secondary'};
+ const {WebSearchControls}=load('src/components/WebSearchControls.tsx',{
+  'react/jsx-runtime':{jsx,jsxs:jsx},'react-native':{Pressable:'Button'},'../theme/AppTheme':{useAppTheme:()=>({colors})},'../theme/controlStyles':load('src/theme/controlStyles.ts'),'./AppIcon':{AppIcon:'Icon'},'./ScaledText':{ScaledText:'Text'},
+ });
+ for(const enabled of [true,false]){
+  const control=WebSearchControls({enabled,onToggle(){}});
+  assert.equal(control.props.accessibilityState.checked,enabled);
+  const style=Object.assign({},...control.props.style({pressed:false}));
+  assert.equal(style.backgroundColor,enabled?'accent':'surface');
+  assert.equal(control.props.children[0].props.color,enabled?'on-accent':'secondary');
+  assert.equal(control.props.children[1].props.style.color,enabled?'on-accent':'secondary');
+ }
+});

@@ -1,7 +1,8 @@
 import Svg, { Path } from 'react-native-svg';
 
-export type AppIconName = 'home' | 'chat' | 'models' | 'settings' | 'info' | 'menu' | 'close' | 'arrow' | 'up' | 'chevron' | 'shield' | 'download' | 'check' | 'trash' | 'moon' | 'text' | 'plus' | 'pause' | 'play' | 'stop' | 'search' | 'export';
+export type AppIconName = 'home' | 'chat' | 'models' | 'settings' | 'info' | 'menu' | 'close' | 'arrow' | 'up' | 'chevron' | 'shield' | 'download' | 'check' | 'trash' | 'moon' | 'text' | 'plus' | 'pause' | 'play' | 'stop' | 'search' | 'export' | 'back';
 const paths: Record<AppIconName, string> = {
+  back: 'M20 12H4m6-6-6 6 6 6',
   export: 'M12 15V3m-5 5 5-5 5 5M4 13v8h16v-8',
   stop: 'M6 6h12v12H6V6Z',
   search: 'M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15Zm5.5 13 5 5',

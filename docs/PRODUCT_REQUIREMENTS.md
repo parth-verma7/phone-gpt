@@ -34,9 +34,10 @@ Privacy is a product goal, not a claim of end-to-end encryption or a guarantee t
 ### Home and navigation
 
 - Open on a welcome page explaining on-device use and privacy, with entry points to Chat and Models.
-- A drawer slides from the left and includes Home, New chat, Models, Settings and App Info.
-- The drawer contains scrollable Chat History and its Search action.
-- Android Back closes the drawer to Chat, returns secondary screens to Chat, returns Chat to Home, then permits normal exit from Home.
+- Keep Home as the welcome/opening page, with future account/payment scope deferred. Bottom tabs provide Home, Chats, Models and Settings.
+- Chats shows a full, virtualized conversation list with last-message previews, creation date/time, inline search, Export, Edit and a prominent filled New chat action.
+- App Info and Contact are reached from Settings. Individual conversations hide the bottom tabs to preserve composer space.
+- Android Back closes an open overlay first, returns a conversation to Chats, App Info to Settings, other main tabs to Home, then permits normal exit from Home.
 - Use the supplied PhoneGPT logo consistently in the launcher, splash and relevant screens.
 
 ### Model discovery and management
@@ -55,7 +56,7 @@ Catalog labels follow model publishers' descriptions. Uncensored/abliterated is 
 
 ### Chat and conversation memory
 
-- Show the conversation UUID in the chat header and the loaded model below it.
+- Show a readable first-user-message title in the chat header and the loaded model below it. UUIDs remain internal storage/export identities. Titles normalize Markdown/whitespace and truncate safely at 48 Unicode characters; attachment-only chats use the file name.
 - Preserve sent messages and generated replies locally. Reopening a conversation restores its transcript.
 - Supply the current conversation's messages on subsequent turns. Other chats are not used as memory; there is no cross-chat personal memory feature.
 - Stream output into the conversation as tokens arrive. Display inline generation feedback rather than a blocking loading screen.
@@ -71,10 +72,10 @@ Catalog labels follow model publishers' descriptions. Uncensored/abliterated is 
 ### History, search and deletion
 
 - Label history entries using a first-message preview and the conversation's start date/time. Dev-origin chats carry a Dev prefix.
-- Search from Chat History opens a full-screen list after the drawer closes.
+- Inline search on the Chats screen filters the whole history, with highlighted matching excerpts. No drawer or search-modal transition is required.
 - Match literal, case-insensitive substrings anywhere in titles/messages, highlight excerpts and order results by conversation start time, newest first.
 - Open a result in its original conversation.
-- Offer separate delete controls in history and search with confirmation/cancel. Delete only the chosen conversation and its private attachment copies; preserve source documents, other chats and models.
+- Do not place trash buttons on ordinary chat rows. Edit enables checkbox selection, Select all/Deselect all and a confirmed Delete selected action. When searching, Select all applies only to matching results and changing the query clears selection. Sequential deletion preserves completed removals if another fails; report the error and retain remaining selection. Delete only chosen conversations and private attachment copies; preserve source documents, other chats and models.
 
 ### Text-file questions
 
@@ -181,7 +182,7 @@ Automatic website deployment verified November 5: first push-triggered GitHub Ac
 
 Website visual alignment (November 5): model discovery, setup and contact share bounded panels with consistent pale green tint, corner radius and responsive page gutters. Very narrow headers omit the secondary download CTA to prevent crowding. Mobile app UI is unchanged.
 
-Android delivery: verified standalone 0.5.8 / code 22 contains current shared product features including optional web search. Existing Dev 0.5.4 receives 0.5.8 JavaScript through Metro. Installation/export/native inference still require A54 acceptance.
+Android delivery: verified standalone 0.5.9 / code 23 contains current shared product features including optional web search. Existing Dev 0.5.4 receives 0.5.9 JavaScript through Metro. Installation/export/native inference still require A54 acceptance.
 
 ## Planned model memory/device guidance
 
@@ -198,7 +199,7 @@ Dev shows an app-owned “Searching the web…” overlay over the message area 
 
 The current/last web-turn tracker includes the hidden prompt, search input and generated reply. Streaming output is estimated, then the completed output is tokenized. Saved usage is scoped to that conversation's latest reply, model and context size; a new turn/model/window uses its own count. An empty chat remains empty. These changes are Dev source, pending device verification. Cloudflare service monitoring is aggregate; there is no signed-in user tracking or conversation/query logging service.
 
-The compact Web on/off control sits next to the model selector below the UUID. Its online-query/local-reply explanation appears once when an enabled Web mode is first opened on Chat (including the default-on case), then remains dismissed across relaunches and toggle cycles. Clearing app data resets that notice. The composer has no recurring search explanation.
+The compact Web on/off control sits next to the model selector below the conversation title. Its online-query/local-reply explanation appears once when an enabled Web mode is first opened on Chat (including the default-on case), then remains dismissed across relaunches and toggle cycles. Clearing app data resets that notice. The composer has no recurring search explanation.
 
 ## Local conversation export — Dev source
 
@@ -257,3 +258,11 @@ Standalone 0.5.7/code 21 includes the six-color refinement; build and update-sig
 App Info → Contact now uses the owner-provided website form endpoint. Only tapping Send message transmits the entered name, email and message through Formspree. Chat history, attachments and model data are excluded. No email inbox is displayed or embedded in the app. The message is required but has no application maximum length; name/email validation remains. Provider/network limits can still reject submissions, preserving the draft and showing a retry notice. The contact form needs internet; this does not change offline inference.
 
 Standalone 0.5.8/code 22 includes the direct contact form; 164 automated assertions, TypeScript and package/update-signature verification passed. No real feedback was submitted during testing; A54 contact delivery acceptance is pending.
+
+### Navigation and routing refinement — 0.5.9
+
+Home remains the opening page by owner choice. Chats is a separate bottom tab with familiar list navigation, first-message titles, last-message previews, retained start dates, inline full-history search and Edit-based deletion. Model switching, context controls, exports, voice and local conversation memory remain available. Unsent drafts are retained in memory when switching saved conversations; they are not newly backed up or synced. Preview formatting removes common Markdown decoration without changing original messages. New chat is visibly filled in the chosen theme; repeated New chat on an empty conversation still reuses it.
+
+Web on uses a filled accent surface with contrasting label/icon; off uses a neutral surface. Ambiguous auto-routing makes a brief YES/NO local decision. An unusable decision or routing-only failure falls back to a normal local reply instead of failing the conversation; explicit requested searches and deterministic changing-fact checks still bypass that decision. A fallback is not evidence that the answer has been verified online. Authentication, payments and cloud history remain deferred.
+
+Standalone 0.5.9/code 23 includes the navigation/editing/preview/web fixes. Build and update-signature verification passed against 0.5.8; 180 automated assertions and TypeScript passed. Native A54 acceptance is pending. The earlier 0.5.8 repository sync was explicitly pushed to GitHub at 7d3794e; the owner authorized publishing the 0.5.9 feature set on 2026-11-07. Native A54 acceptance remains a separate check.

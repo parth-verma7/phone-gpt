@@ -1,8 +1,8 @@
 # PhoneGPT — Product requirements
 
-Current Android delivery (2026-11-08): standalone **0.5.12/code 26** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.10.md).
+Current Android delivery (2026-11-09): standalone **0.5.13/code 27** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.13.md).
 
-Owner: Parth Verma. Last updated: 2026-11-08.
+Owner: Parth Verma. Last updated: 2026-11-09.
 Status: living product specification for the Android MVP. Implementation details belong in [Technical design](TECHNICAL_DESIGN.md); delivery status belongs in [Project tracker](../PROJECT_TRACKER.md).
 
 ## 1. Purpose
@@ -300,3 +300,11 @@ Current source/Dev replaces the centred web-search overlay with a compact inline
 The owner’s 2026-11-08 device check confirmed that replies after the web quota displayed the limit/reset notice and continued locally. They were not additional successful web searches. No query/raw-IP logs were enabled for the investigation.
 
 Production 0.5.12/code 26 now embeds the compact search activity and Send-scroll changes, verified against 64 current source inputs and the prior signing certificate. The rate-limit investigation is resolved by owner feedback as expected local fallback after rejection, with no server configuration change. Native UI/scroll acceptance remains separate.
+
+## Saved system prompt versions (source/Dev, 2026-11-09)
+
+Users can retain up to 50 dated prompt versions locally within the history storage budget, preview and restore them, remove an older entry with confirmation, or restore the default. Full history never silently prunes entries; it asks users to remove an older version before saving. A restored version becomes active only after Save, for new chats; existing chats retain their instructions. Unsaved edits are protected by a replacement confirmation. No recovery of previously deleted instructions is promised. Included in verified standalone 0.5.13; A54 acceptance remains pending.
+
+The original bundled PhoneGPT default is a pinned, non-removable choice outside the 50 user-version slots and history text budget. Restoring it works even when history is full. Default copies from an earlier history envelope are filtered out during hydration; the bundled constant remains the source of truth.
+
+Delivery 2026-11-09: standalone 0.5.13/code 27 includes saved prompt versions and compact controls, verified against 64 application source inputs and the prior update certificate. Website release links and product copy are updated. Dev receives the same shared JavaScript; native A54 acceptance remains pending.

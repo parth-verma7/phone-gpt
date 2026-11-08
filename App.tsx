@@ -57,7 +57,7 @@ type Message = { id: string; role: Role; content: string; attachments?: TextAtta
 type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; modelId?: string; origin?: 'dev' | 'production' };
 type ModelStatus = 'checking' | 'paused' | 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
 
-const APP_VERSION = 'v0.5.12';
+const APP_VERSION = 'v0.5.13';
 const MODEL_GROUPS = groupModelsByProvider(models);
 const STORAGE_KEY = '@phone-gpt/chats';
 const INFERENCE_SETTINGS_KEY = '@phone-gpt/inference-settings';
@@ -628,7 +628,8 @@ function PhoneGptApp() {
     const submittedDraft = message;
     const cleanMessage = submittedDraft.trim();
     const useWebForTurn = WEB_SEARCH_FEATURE_ENABLED && webPreferenceReady && (webEnabled || explicitlyRequestsWebSearch(cleanMessage));
-    if ((!cleanMessage && !attachedText) || chatDeletionInFlight.current || generationInFlight.current || voice.isActive() || voice.busy || isGenerating || isPickingFile || switchingChatModel.current || !promptSettings.ready) return;
+    if ((!cleanMessage && !attachedText) || chatDeletionInFlight.current || generationInFlight.current || voice.isActive() || voice.busy || isGenerating || isPickingFile || switchingChatModel.current) return;
+    if (!currentChat && !promptSettings.ready) { Alert.alert('Instructions unavailable', 'Open Settings to check saved instructions, then restart the app to retry. Existing conversations remain available.'); return; }
     if (modelStatus !== 'ready') {
       Alert.alert('Model not ready', 'Choose a downloaded model above, or download one from the Models tab.');
       return;

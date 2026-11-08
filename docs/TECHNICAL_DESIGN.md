@@ -1,8 +1,8 @@
 # PhoneGPT — Technical design
 
-Current Android delivery (2026-11-08): standalone **0.5.12/code 26** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.10.md).
+Current Android delivery (2026-11-09): standalone **0.5.13/code 27** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.13.md).
 
-Owner: Parth Verma. Last updated: 2026-11-08.
+Owner: Parth Verma. Last updated: 2026-11-09.
 Status: description of the current repository and explicit deferred decisions. Product behavior and scope are defined in [Product requirements](PRODUCT_REQUIREMENTS.md). Tasks and verification gaps are in [Project tracker](../PROJECT_TRACKER.md).
 
 This document records the implementation and its rationale. Where earlier alternatives were discussed but no measured comparison was performed, the rationale below explains the current design's fit; it does not claim a benchmark or formal evaluation occurred.
@@ -382,3 +382,13 @@ Production 0.5.12/code 26 now embeds the compact search activity and Send-scroll
 Search Console ownership verification uses an owner-downloaded public HTML verification file in the website’s public assets. Static export preserves the exact bytes and root filename, with a regression check. Keep the file available for Google’s periodic ownership rechecks. No analytics or tracking SDK is introduced; upload/deployment is distinct from successful verification and sitemap submission.
 
 Cloudflare verification-file delivery uses a single static 200 rewrite to a byte-identical text asset to avoid Pages’ automatic .html canonical redirect. The original downloaded HTML file remains unchanged and the exact requested URL can return its contents directly.
+
+## Saved system prompt versions (source/Dev, 2026-11-09)
+
+A separate AsyncStorage history key stores a schema-versioned envelope containing activePrompt and dated versions; the old raw-text key is read only when history is absent, and migrates on the first changed Save. History is limited to 50 entries/64,000 text characters and rejects full-history saves without pruning. Explicit confirmed entry removal frees space; each prompt is limited to 16,000 characters. A single write keeps active/history consistent, a ref guards concurrent saves, and read errors disable writes/new chats to protect unread data while existing chat snapshots remain usable. OS-managed Android backups can retain prompts; local storage is not a promise to exclude platform backup. No new dependency or network service. See [design and verification](SAVED_PROMPT_VERSIONS.md). Included in verified standalone 0.5.13; physical-device acceptance remains pending.
+
+The original bundled PhoneGPT default is a pinned, non-removable choice outside the 50 user-version slots and history text budget. Restoring it works even when history is full. Default copies from an earlier history envelope are filtered out during hydration; the bundled constant remains the source of truth.
+
+System prompt actions use a wrapping horizontal flex row with shared ActionButton controls, keeping consistent touch targets while reducing vertical space.
+
+Delivery 2026-11-09: standalone 0.5.13/code 27 includes saved prompt versions and compact controls, verified against 64 application source inputs and the prior update certificate. Website release links and product copy are updated. Dev receives the same shared JavaScript; native A54 acceptance remains pending.

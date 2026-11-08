@@ -1,0 +1,15 @@
+# Saved system prompt versions
+
+Implemented in shared source/Dev on 2026-11-09; included in verified standalone 0.5.13/code 27; native A54 acceptance remains pending.
+
+Settings retains an editable current prompt. Each changed Save atomically writes the active prompt and a dated version list to the new local AsyncStorage history key. Unchanged saves do not create duplicates. The first changed save also preserves the previous custom prompt; its timestamp records when it entered history, not its original edit time. No old deleted text can be recovered. History is bounded to 50 entries and 64,000 combined text characters, with 16,000 characters per prompt. A full history rejects new saves without discarding entries; users can explicitly remove an entry with confirmation. Prompt data is stored locally, but Android OS-managed backups may retain/restore it because the existing app enables backup. Clearing data or uninstalling removes the local copy, not necessarily OS backups. Dev and production have separate stores.
+
+Show prompt history displays versions newest first, a date and a short preview; tapping the preview expands the full instructions. Use this prompt and Restore default populate the editor, with confirmation before replacing unsaved edits. Save is required to activate that choice for new conversations. Existing chat snapshots are unchanged. Blank Save restores the default. No per-chat apply action is included.
+
+Storage uses schemaVersion 1, activePrompt and versions (id, text, savedAt). A separate @phone-gpt/system-prompt-versions-v1 key avoids confusing JSON-shaped legacy instructions with storage metadata. When absent, the old raw @phone-gpt/system-prompt value is read unchanged; the next changed save writes the new envelope. The old key is retained for migration compatibility. A ref blocks duplicate concurrent writes in the single hook instance; state changes only after a successful write. Failed hydration disables saving and blocks new chats with an explicit alert instead of overwriting unread history; existing conversations remain usable. Restart retries hydration. Failed writes retain the draft, previous active prompt and history for retry. There is no network, new dependency or APK-native change.
+
+Verification: meaningful hook tests cover legacy hydration, migration, persistence/reload, restoration, unchanged saves and failures. TypeScript and the existing suite must pass. A54 interaction/visual acceptance and standalone delivery are tracked in the 0.5.13 release notes.
+
+The original bundled PhoneGPT default is a pinned, non-removable choice outside the 50 user-version slots and history text budget. Restoring it works even when history is full. Default copies from an earlier history envelope are filtered out during hydration; the bundled constant remains the source of truth.
+
+Settings places Save, Restore default and History together in a horizontal action row with an 8-point gap; controls wrap naturally on narrow screens or larger text settings. Shared button touch targets are retained.

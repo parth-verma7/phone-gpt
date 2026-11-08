@@ -1,9 +1,11 @@
 # PhoneGPT project tracker
 
-Last reviewed: 2026-11-08. Current shared source and verified standalone Android APK: **0.5.12**, version code **26**. Dev native APK remains 0.5.4 and receives current JS through Metro. Production bundles the same features; 64 build source inputs and update signature match verified. iOS metadata is 0.5.12 / 26, not compiled/signed. Physical-device checks remain pending.
+Last reviewed: 2026-11-09. Current shared source and verified standalone Android APK: **0.5.13**, version code **27**. Dev native APK remains 0.5.4 and receives current JS through Metro. Production bundles the same features; 64 build source inputs and update signature match verified. iOS metadata is 0.5.13 / 27, not compiled/signed. Physical-device checks remain pending.
 Scope: private, on-device model downloads and chat in one mobile repository, with no chat backend. “Done” means implemented; outstanding physical-device checks are explicitly listed under To-do. Setup, dependencies, storage and source locations are in [README.md](README.md).
 
 ## To-do
+
+- [ ] Saved prompt versions: verify history, unsaved-edit confirmation and restore on A54; confirm the compact action row at large text sizes. Shared source and verified standalone 0.5.13 contain this feature.
 
 - [ ] **Model RAM/device compatibility:** research exact quantizations, separate download storage from runtime RAM, account for context/cache and simultaneous voice-model memory, measure standalone peaks on A54, and show source-labelled estimates/device guidance. Start with Qwen 3.5 0.8B plus Whisper Tiny/Base. All catalog entries need coverage; no RAM minimum is verified yet. See [research and acceptance criteria](docs/MODEL_MEMORY_RESEARCH.md).
 

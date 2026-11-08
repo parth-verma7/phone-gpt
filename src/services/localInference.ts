@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { resolveSystemPrompt } from '../config/systemPrompt';
 import { modelContextLimit, normalizeTokenSettings, UNKNOWN_CONTEXT_LIMIT } from './tokenLimits';
 import type { LlamaContext, CompletionResponseFormat } from 'llama.rn';
 import type { ModelDefinition } from './models';
@@ -27,15 +28,8 @@ let loadedContextLimit: number | null = null;
 
 const STOP_WORDS = ['</s>', '<|end|>', '<|eot_id|>', '<|end_of_text|>', '<|im_end|>', '<|EOT|>', '<|END_OF_TURN_TOKEN|>', '<|end_of_turn|>', '<|endoftext|>'];
 
-function systemPrompt(reasoningMode: ReasoningMode) {
-  const base = 'You are Parth, a helpful and concise assistant. Use relevant facts from earlier messages in this same conversation when answering.';
-  if (reasoningMode === 'short') return `${base} Keep reasoning brief.`;
-  if (reasoningMode === 'extended') return `${base} Reason through complex questions thoroughly.`;
-  return base;
-}
-
 export function effectiveSystemPrompt(settings: InferenceSettings, customPrompt?: string) {
-  return customPrompt?.trim() || systemPrompt(settings.reasoningMode);
+  return resolveSystemPrompt(settings.reasoningMode, customPrompt);
 }
 
 function conversationText(messages: ChatMessage[]) {

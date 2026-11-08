@@ -105,3 +105,34 @@ These checks apply to source/Dev changes after standalone 0.5.5 was built.
 - Chat back → Chats; Chats/Models/Settings back → Home; App Info back → Settings; Home back permits exit. Overlay Back closes only the overlay.
 - Web on is filled, off neutral. Test ambiguous everyday question, changing-fact question, explicit search, explicit no-search and Stop during routing/search. No malformed routing decision should fail the entire turn.
 - Recheck streaming scroll priority, typing and Stop, native keyboard safe areas, voice cleanup and export folder flow.
+
+## 0.5.10 prompt acceptance
+
+- Settings → System prompt shows the full default PhoneGPT instructions without typing anything. Saved custom instructions remain unchanged.
+- Start a new default chat and ask for tea-making steps: check direct, readable paragraphs/bullets without an unsolicited name preface, plus a relevant follow-up only if useful. Model behavior is not guaranteed by prompt text alone.
+- Save custom instructions, start a new chat, then reopen an older custom-prompt chat to confirm its prior instructions remain.
+- Save a blank field: default text reappears, persists after relaunch, and new chats use it.
+- With Web on, verify identity does not revert to Parth; Stop, context budgeting and explicit no-search still work.
+- Chat rows show only start time; full creation metadata remains in export and accessibility text.
+
+### Context save and Settings order (current source)
+- In Settings, verify Appearance → Text size → Generation → System prompt → About PhoneGPT.
+- With a model ready, change Conversation context and Apply. Stay in Settings; reopen it and confirm the saved value. Repeat in Models; stay in Models.
+- Return to a chat: the model requires loading. Press Load last model, then send; the saved window applies. Repeat sending without a context change: no reload should occur.
+- If a larger allocation fails after pressing Load, model recovery is available; Send must not silently retry loading.
+
+### Search stages and links (current source)
+- Ask a current-fact question with Web on. Check a collapsed search-decision summary, web-search indicator, then the normal open reply. Expand the summary; it should show brief app-authored status only.
+- Stop during routing, reopen the chat and confirm the saved check is marked interrupted rather than spinning.
+- Verify a supplied Markdown link displays its label and opens the expected URL; bare URLs also open, while website names without URLs remain plain text.
+- Context Apply must stay on the current page. Before the next reply, explicitly press Load; Send must never silently load.
+
+### Search limit recovery (0.5.11)
+- On a real 429, show the window start/reset in local time and a local-answer notice with no fresh-web label/source cards. A global daily limit must show its later daily reset instead.
+- Local response should avoid claiming a current fact was checked; Stop must still work. No automatic query is sent at the reset time.
+- After reset, explicitly ask a new web question to search again. Shared public Wi-Fi shares the limit.
+
+### Compact search status and Send scroll
+- Trigger a real search: a compact inline box should appear beneath the latest messages, then disappear as generation begins; no centred overlay.
+- Scroll far up, then send a message, including during a preceding fling. The sent message must come into view. A fresh scroll-up gesture after Send must still stop following.
+- For quota testing, count actual web lookups with fresh source links, not total chat messages or local fallbacks. Networks/IPv6 identities can change; raw-IP history is not stored.

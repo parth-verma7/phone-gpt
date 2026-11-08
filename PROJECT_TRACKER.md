@@ -1,13 +1,13 @@
 # PhoneGPT project tracker
 
-Last reviewed: 2026-11-06. Current source/Android build version: **0.5.4**, version code **18**. iOS source/build configuration 0.5.4 / 18 has not been compiled or signed. Dev/standalone were rebuilt from the current shared source, including flexible token controls and live transcription. Physical-device checks remain pending.
+Last reviewed: 2026-11-08. Current shared source and verified standalone Android APK: **0.5.12**, version code **26**. Dev native APK remains 0.5.4 and receives current JS through Metro. Production bundles the same features; 64 build source inputs and update signature match verified. iOS metadata is 0.5.12 / 26, not compiled/signed. Physical-device checks remain pending.
 Scope: private, on-device model downloads and chat in one mobile repository, with no chat backend. “Done” means implemented; outstanding physical-device checks are explicitly listed under To-do. Setup, dependencies, storage and source locations are in [README.md](README.md).
 
 ## To-do
 
 - [ ] **Model RAM/device compatibility:** research exact quantizations, separate download storage from runtime RAM, account for context/cache and simultaneous voice-model memory, measure standalone peaks on A54, and show source-labelled estimates/device guidance. Start with Qwen 3.5 0.8B plus Whisper Tiny/Base. All catalog entries need coverage; no RAM minimum is verified yet. See [research and acceptance criteria](docs/MODEL_MEMORY_RESEARCH.md).
 
-- [ ] **A54 0.5.4 parity:** install the matching rebuilt APK, confirm App Info shows 0.5.4, and check both token sliders in Settings → Generation and expanded model options. See [verification](docs/RELEASE_0.5.4.md).
+- [ ] **A54 0.5.10 parity:** install the current standalone update, confirm App Info shows 0.5.10, and check both token sliders in Settings → Generation and expanded model options. See [verification](docs/RELEASE_0.5.10.md).
 
 - [ ] **Android / Play Store launch:** complete the [2026-11-03 readiness audit](docs/PLAY_STORE_READINESS.md). Not submission-ready: AI safeguards and in-app reporting, public privacy policy/backup decision, release permissions, upload signing/AAB, account/listing declarations, licensing and physical/required closed testing remain open. The About contact form is not an AI-reporting flow.
 - [ ] **iOS / App Store launch:** after native compilation/signing and iPhone verification, distribute through TestFlight and complete Apple privacy/listing/review requirements. No signed build or store submission yet.
@@ -48,7 +48,7 @@ Scope: private, on-device model downloads and chat in one mobile repository, wit
 
 - [x] **Separate living specifications:** [Product requirements](docs/PRODUCT_REQUIREMENTS.md) defines mission, MVP, features, acceptance and future scope; [Technical design](docs/TECHNICAL_DESIGN.md) records architecture, technology rationale, storage, runtime flows, tradeoffs and limits. README links both; update the relevant document alongside future changes and distinguish Dev preview from built artifacts.
 
-- [x] **Flexible token controls (0.5.1):** reply presets 384/512/768, context presets up to 32768 when supported, sliders and validated custom integer fields. Defaults 384/2048; GGUF context ceiling checked before allocation, conservative unknown-metadata fallback, per-turn reply budget fits current input, context reload only on commit. Ten JS test files and TypeScript pass; Dev browser checks cover dragging, custom range validation and reload persistence. Packaged into both 0.5.1 builds; phone validation remains pending.
+- [x] **Flexible token controls (0.5.1):** reply presets 384/512/768, context presets up to 32768 when supported, sliders and validated custom integer fields. Defaults 384/2048; GGUF context ceiling checked before allocation, conservative unknown-metadata fallback, per-turn reply budget fits current input, context changes save on Apply and require explicit Load model (current source; original builds reloaded on commit). Ten JS test files and TypeScript pass; Dev browser checks cover dragging, custom range validation and reload persistence. Packaged into both 0.5.1 builds; phone validation remains pending.
 
 - [x] **0.5.0 Dev/production sync and branding:** supplied logo in both launchers, splash and application screens; final Dev built and browser-checked before standalone production. Both APKs use version code 14 and matching update certificates. Nine test files, TypeScript, six native download fixture scenarios, packaged feature/icon checks, ZIP integrity and 16 KB ZIP/ELF alignment pass. Standalone is 63,003,884 bytes; Dev is 102,412,459 bytes, with no model weights bundled. Device testing remains above.
 - [x] **Chat deletion:** separate trash actions in history and search, confirmation/cancel, serialized local history persistence, private attachment cleanup, active-chat reset and busy guards. Focused tests pass; A54 confirmation and data-retention checks remain pending.
@@ -195,3 +195,19 @@ Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/)
 - [x] **0.5.9 GitHub publication authorized:** owner requested the push on 2026-11-07. Includes navigation, editing, preview formatting, web fixes and documentation. Native A54 acceptance remains separate; the earlier 0.5.8 sync was 7d3794e.
 
 - [x] **Chat-row spacing (source):** show start time only; remove visible date label while retaining creation metadata, accessible full date and chronological ordering.
+
+- [x] **Visible editable PhoneGPT prompt (source/Dev):** one shared default for normal/web answers, no Parth fallback, brief paragraphs/bullets, direct style and optional relevant follow-up. Preserve custom settings; saving blank visibly restores default.
+- [ ] **Prompt acceptance on A54:** new default chat asking for tea steps, custom-prompt save/new chat, blank reset, reload persistence, old custom chat unchanged and web-grounded identity. Device generation has not been tested by the agent.
+
+- [x] Settings/context flow (source/Dev): preferences first, About last; context Apply stays on the page and requires explicit Load model before the next message. A54 validation pending.
+
+- [x] Shared source/Dev: collapsed per-question search routing summaries, distinct search/generation stages, clickable supplied Markdown/bare links, and explicit model reload after saving a context change. A54 acceptance pending.
+
+- [x] **Production 0.5.10/code 24 built:** all current shared Dev features embedded; 21 test files, TypeScript, source-map parity and signature checks pass. A54 install/runtime acceptance remains open; APK is local, not newly published to a download service.
+
+- [x] Hourly-search source/Dev: first-reservation one-hour window, 10 per network, retained global 50/day; validated reset/start times and clearly labelled local fallback on 429. Worker deployed with dashboard-controlled limits; standalone 0.5.11/code 25 built and verified. A54 acceptance pending.
+
+- [x] Compact inline web-search status and post-Send scroll regression fix (shared source/Dev). Automated coverage checks stale momentum versus a newer reading gesture. A54 acceptance pending.
+- [x] Reported >10 searches resolved by owner testing: replies after the cap showed the search-limit/reset notice and local fallback, confirming blocked web lookups rather than extra allowed searches. Cloudflare variables remain 10/hour per network and 50/day shared. No raw-IP/query history logging was enabled.
+
+- [x] Production 0.5.12/code 26 built and verified with compact search activity and Send-scroll fix. 22 test files and TypeScript pass; 64 packaged inputs match. A54 UI/scroll acceptance remains pending.

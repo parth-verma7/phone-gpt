@@ -13,6 +13,7 @@ async function harness(text) {
  const tokens=load('src/services/tokenLimits.ts');
  const api=load('src/services/localInference.ts', name=>{
   if(name==='react-native')return {Platform:{OS:'android'}};
+  if (name === '../config/systemPrompt') { const result = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/config/systemPrompt.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: result }); return result; }
   if(name==='./tokenLimits')return tokens;
   if(name==='llama.rn')return {initLlama:async()=>({completion:async(p)=>{params=p;if(text instanceof Error)throw text;return {text}},stopCompletion:async()=>{},release:async()=>{},tokenize:async()=>({tokens:[]})})};
   throw Error(name);

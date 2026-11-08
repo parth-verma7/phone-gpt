@@ -34,14 +34,16 @@ import { ChatExport } from './src/components/ChatExport';
 import { TokenLimitControl } from './src/components/TokenLimitControl';
 import { availableReplyTokens, MIN_CONTEXT_TOKENS, MIN_REPLY_TOKENS, UNKNOWN_CONTEXT_LIMIT, normalizeTokenSettings, replyLimit } from './src/services/tokenLimits';
 import { WEB_SEARCH_FEATURE_ENABLED, restoreWebPreference } from './src/config/webSearch';
-import { classifyWebQuery, explicitlyRequestsWebSearch, searchWeb } from './src/services/webSearch';
+import { classifyWebQuery, explicitlyRequestsWebSearch, searchWeb, WebSearchRateLimitError, type SearchRateLimitDetails } from './src/services/webSearch';
 import { validateWebCitationMarkers } from './src/services/webCitations';
 import { fitWebEvidence } from './src/services/webGrounding';
 import type { WebSearchProvenance } from './src/services/webSearchTypes';
 import { WebSearchControls } from './src/components/WebSearchControls';
 import { WebSources } from './src/components/WebSources';
+import { SEARCH_LIMIT_FALLBACK_PROMPT, searchLimitNotice } from './src/services/searchFallback';
 import { resolveWebUsage, webUsageTotal, type WebContextUsage, type WebTurnUsage } from './src/services/webContextUsage';
 import { WebSearchOverlay } from './src/components/WebSearchOverlay';
+import { SearchDecision, type SearchDecisionState } from './src/components/SearchDecision';
 import { CONTROL, controlSurface } from './src/theme/controlStyles';
 import { ChatsScreen } from './src/components/ChatsScreen';
 import { BottomTabs } from './src/components/BottomTabs';
@@ -51,11 +53,11 @@ import { ScaledText as Text, ScaledTextInput } from './src/components/ScaledText
 
 type Screen = 'home' | 'chats' | 'chat' | 'models' | 'settings' | 'info';
 type Role = 'user' | 'assistant';
-type Message = { id: string; role: Role; content: string; attachments?: TextAttachment[]; web?: WebSearchProvenance; contextUsage?: WebContextUsage };
+type Message = { id: string; role: Role; content: string; attachments?: TextAttachment[]; web?: WebSearchProvenance; contextUsage?: WebContextUsage; searchDecision?: SearchDecisionState; searchLimit?: SearchRateLimitDetails };
 type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; modelId?: string; origin?: 'dev' | 'production' };
 type ModelStatus = 'checking' | 'paused' | 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
 
-const APP_VERSION = 'v0.5.9';
+const APP_VERSION = 'v0.5.12';
 const MODEL_GROUPS = groupModelsByProvider(models);
 const STORAGE_KEY = '@phone-gpt/chats';
 const INFERENCE_SETTINGS_KEY = '@phone-gpt/inference-settings';
@@ -80,6 +82,7 @@ function PhoneGptApp() {
   const messageListRef = useRef<ScrollView>(null);
   const followLatest = useRef(true);
   const readingWithGesture = useRef(false);
+  const pendingSendScroll = useRef(false);
   const lastScrollGeometry = useRef<{ y: number; height: number; viewport: number } | null>(null);
   const messageInputRef = useRef<TextInput>(null);
   const refocusAfterGeneration = useRef(false);
@@ -136,6 +139,7 @@ function PhoneGptApp() {
   const [webPreferenceReady, setWebPreferenceReady] = useState(false);
   const [webDisclosureSeen, setWebDisclosureSeen] = useState(false);
   const webDisclosureShowing = useRef(false);
+  const [searchLimitForTurn, setSearchLimitForTurn] = useState<{ chatId: string; userId: string; details: SearchRateLimitDetails } | null>(null);
   const [webPhase, setWebPhase] = useState<'idle' | 'deciding' | 'searching' | 'generating'>('idle');
   useEffect(() => {
     let active = true;
@@ -330,6 +334,12 @@ function PhoneGptApp() {
     const previous = lastScrollGeometry.current;
     lastScrollGeometry.current = next;
     const gap = Math.max(0, next.height - next.viewport - next.y);
+    // A previous fling/layout event must not cancel the scroll requested by
+    // Send. A fresh touch/drag/wheel/keyboard gesture explicitly cancels it.
+    if (pendingSendScroll.current) {
+      if (gap <= 24) pendingSendScroll.current = false;
+      return;
+    }
     // Layout/markdown/keyboard changes can move the offset without user intent.
     // Wheel and accessibility scrolling, however, may never emit native drag events.
     const stableLayout = previous && Math.abs(next.height - previous.height) <= 1 && Math.abs(next.viewport - previous.viewport) <= 1;
@@ -340,6 +350,7 @@ function PhoneGptApp() {
     if (readingWithGesture.current && gap > 24) followLatest.current = false;
   }, []);
   const pauseFollowing = useCallback(() => {
+    pendingSendScroll.current = false;
     readingWithGesture.current = true;
     followLatest.current = false;
   }, []);
@@ -627,7 +638,9 @@ function PhoneGptApp() {
     const controller = new AbortController();
     generationAbort.current = controller;
     setIsStopping(false);
+    setSearchLimitForTurn(null);
     setIsGenerating(true);
+    setWebPhase(useWebForTurn && cleanMessage ? 'deciding' : 'generating');
     const finishGeneration = () => {
       generationInFlight.current = false;
       webRequestActive.current = false;
@@ -635,11 +648,12 @@ function PhoneGptApp() {
       setIsStopping(false);
       setIsGenerating(false);
       setWebPhase('idle');
+      setSearchLimitForTurn(null);
       setWebTurnUsage(null);
     };
 
-    const userMessage: Message = { id: `${Date.now()}-user`, role: 'user', content: cleanMessage, ...(attachedText ? { attachments: [attachedText] } : {}) };
-    const nextChat: Chat = currentChat
+    const userMessage: Message = { id: `${Date.now()}-user`, role: 'user', content: cleanMessage, ...(useWebForTurn && cleanMessage ? { searchDecision: 'checking' as const } : {}), ...(attachedText ? { attachments: [attachedText] } : {}) };
+    let nextChat: Chat = currentChat
       ? { ...currentChat, modelId: selectedModel.id, messages: [...currentChat.messages, userMessage] }
       : { id: draftChatId, title: conversationTitle({ messages: [userMessage] }), modelId: selectedModel.id, messages: [userMessage], createdAt: Date.now(), systemPrompt: promptSettings.savedPrompt, origin: __DEV__ ? 'dev' : 'production' };
 
@@ -647,15 +661,15 @@ function PhoneGptApp() {
     // Count every input, including the hidden prompt and attached file content.
     {
       try {
-        const tokens = await getInputTokenCount(await messagesForInference(nextChat.messages), inferenceSettings, nextChat.systemPrompt);
+        const tokens = await getInputTokenCount(await messagesForInference(nextChat.messages), turnSettings, nextChat.systemPrompt);
         if (controller.signal.aborted) { finishGeneration(); return; }
-        const maxTokens = availableReplyTokens(inferenceSettings.contextSize, tokens, inferenceSettings.maxTokens);
+        const maxTokens = availableReplyTokens(turnSettings.contextSize, tokens, turnSettings.maxTokens);
         if (maxTokens < 1) {
           Alert.alert('Message exceeds available context', 'Use a shorter system prompt or file, start a fresh chat, or increase Conversation context in Models.');
           finishGeneration();
           return;
         }
-        turnSettings = { ...inferenceSettings, maxTokens };
+        turnSettings = { ...turnSettings, maxTokens };
         if (attachedText) userMessage.attachments = [await persistTextAttachment(attachedText, nextChat.id, userMessage.id)];
       } catch (error) {
         if (controller.signal.aborted) { finishGeneration(); return; }
@@ -668,6 +682,8 @@ function PhoneGptApp() {
     if (controller.signal.aborted) { finishGeneration(); return; }
     followLatest.current = true;
     readingWithGesture.current = false;
+    pendingSendScroll.current = true;
+    lastScrollGeometry.current = null;
     saveChat(nextChat);
     // Preserve any edits made while asynchronous file/prompt validation ran.
     if (draftRef.current === submittedDraft) draftRef.current = '';
@@ -682,8 +698,9 @@ function PhoneGptApp() {
     const assistantId = `${Date.now()}-assistant`;
     let partialReply = '';
     let webProvenance: WebSearchProvenance | undefined;
+    let searchLimit: SearchRateLimitDetails | undefined;
     let webUsage: WebContextUsage | undefined;
-    const usageFields = () => webUsage ? { contextUsage: { ...webUsage } } : {};
+    const usageFields = () => ({ ...(webUsage ? { contextUsage: { ...webUsage } } : {}), ...(searchLimit ? { searchLimit } : {}) });
     let streamTimer: ReturnType<typeof setTimeout> | undefined;
     const publishReply = () => {
       streamTimer = undefined;
@@ -704,22 +721,39 @@ function PhoneGptApp() {
         const decision = classifyWebQuery(cleanMessage);
         const needsSearch = decision === 'search' || (decision === 'ask-model' && await shouldSearchWithLocalModel(cleanMessage, turnSettings, controller.signal));
         if (controller.signal.aborted) throw new GenerationStoppedError('');
+        nextChat = { ...nextChat, messages: nextChat.messages.map(item => item.id === userMessage.id ? { ...item, searchDecision: needsSearch ? 'search' : 'local' } : item) };
+        saveChat(nextChat, false);
         if (needsSearch) {
           setWebPhase('searching');
-          const result = await searchWeb(cleanMessage, { signal: controller.signal });
-          const baselineTokens = await getInputTokenCount(conversationForModel, inferenceSettings, turnPrompt);
-          const grounded = await fitWebEvidence(conversationForModel, result, inferenceSettings, effectiveSystemPrompt(inferenceSettings, nextChat.systemPrompt), getInputTokenCount, controller.signal);
-          if (controller.signal.aborted) throw new GenerationStoppedError('');
-          conversationForModel = grounded.messages;
-          turnPrompt = grounded.systemPrompt;
-          webProvenance = grounded.provenance;
-          const inputTokens = await getInputTokenCount(conversationForModel, inferenceSettings, turnPrompt);
-          if (controller.signal.aborted) throw new GenerationStoppedError('');
-          webUsage = { modelId: selectedModel.id, contextSize: inferenceSettings.contextSize, inputTokens, evidenceTokens: Math.max(0, inputTokens - baselineTokens), outputTokens: 0 };
-          setWebTurnUsage({ chatId: nextChat.id, userId: userMessage.id, usage: { ...webUsage } });
-          const maxTokens = availableReplyTokens(inferenceSettings.contextSize, inputTokens, inferenceSettings.maxTokens);
-          if (maxTokens < 1) throw new Error('There is not enough conversation space for search results. Start a new chat or increase the conversation context.');
-          turnSettings = { ...inferenceSettings, maxTokens };
+          let result;
+          try { result = await searchWeb(cleanMessage, { signal: controller.signal }); }
+          catch (error) {
+            if (controller.signal.aborted || !(error instanceof WebSearchRateLimitError)) throw error;
+            searchLimit = error.details;
+            nextChat = { ...nextChat, messages: nextChat.messages.map(item => item.id === userMessage.id ? { ...item, searchDecision: 'limited' } : item) };
+            saveChat(nextChat, false);
+            setSearchLimitForTurn({ chatId: nextChat.id, userId: userMessage.id, details: searchLimit });
+            turnPrompt = `${effectiveSystemPrompt(turnSettings, nextChat.systemPrompt)}\n\n${SEARCH_LIMIT_FALLBACK_PROMPT}`;
+            const inputTokens = await getInputTokenCount(conversationForModel, turnSettings, turnPrompt);
+            const maxTokens = availableReplyTokens(turnSettings.contextSize, inputTokens, turnSettings.maxTokens);
+            if (maxTokens < 1) throw new Error('There is not enough conversation space for the local answer. Start a new chat or increase context.');
+            turnSettings = { ...turnSettings, maxTokens };
+          }
+          if (result) {
+            const baselineTokens = await getInputTokenCount(conversationForModel, turnSettings, turnPrompt);
+            const grounded = await fitWebEvidence(conversationForModel, result, turnSettings, effectiveSystemPrompt(turnSettings, nextChat.systemPrompt), getInputTokenCount, controller.signal);
+            if (controller.signal.aborted) throw new GenerationStoppedError('');
+            conversationForModel = grounded.messages;
+            turnPrompt = grounded.systemPrompt;
+            webProvenance = grounded.provenance;
+            const inputTokens = await getInputTokenCount(conversationForModel, turnSettings, turnPrompt);
+            if (controller.signal.aborted) throw new GenerationStoppedError('');
+            webUsage = { modelId: selectedModel.id, contextSize: turnSettings.contextSize, inputTokens, evidenceTokens: Math.max(0, inputTokens - baselineTokens), outputTokens: 0 };
+            setWebTurnUsage({ chatId: nextChat.id, userId: userMessage.id, usage: { ...webUsage } });
+            const maxTokens = availableReplyTokens(turnSettings.contextSize, inputTokens, turnSettings.maxTokens);
+            if (maxTokens < 1) throw new Error('There is not enough conversation space for search results. Start a new chat or increase the conversation context.');
+            turnSettings = { ...turnSettings, maxTokens };
+          }
         }
       }
       setWebPhase('generating');
@@ -742,7 +776,7 @@ function PhoneGptApp() {
       }
       const reason = error instanceof Error ? error.message : 'Unknown local inference error.';
       const partialMessages: Message[] = partialReply ? [{ id: assistantId, role: 'assistant', content: partialReply }] : [];
-      saveChat({ ...nextChat, messages: [...nextChat.messages, ...partialMessages, { id: `${Date.now()}-error`, role: 'assistant', content: `I could not generate a reply: ${reason}` }] }, false);
+      saveChat({ ...nextChat, messages: [...nextChat.messages, ...partialMessages, { id: `${Date.now()}-error`, role: 'assistant', ...usageFields(), content: `I could not generate a reply: ${reason}` }] }, false);
     } finally {
       if (streamTimer) clearTimeout(streamTimer);
       setStreamingReply(null);
@@ -772,9 +806,11 @@ function PhoneGptApp() {
     <Text style={styles.controlHint}>A maximum, not a target. Replies can end earlier. The reply shares the context window with your prompt and messages; available space can shorten it.</Text>
     <TokenLimitControl label="Conversation context" value={inferenceSettings.contextSize} min={MIN_CONTEXT_TOKENS} max={contextLimit} presets={[2048, 4096, 10000, 20000, 32768]} disabled={inferenceControlsDisabled} onChange={contextSize => {
       setInferenceSettings(current => normalizeTokenSettings({ ...current, contextSize }, contextLimit));
-      if (modelPath && modelStatus === 'ready') void loadModel(selectedModel, modelPath, contextSize);
+      // Keep loading explicit: the old native allocation must not be used with
+      // a different saved context budget. Reload only after the Load button.
+      if (modelPath && modelStatus === 'ready') setModelStatus('installed');
     }} />
-    <Text style={styles.controlHint}>{knownContextLimit ? `Model context limit: ${knownContextLimit.toLocaleString()} tokens.` : 'Model limit unavailable: up to 32,768 tokens can be requested; support is unverified until model metadata is read.'} Changing context reloads the model. Larger windows need more phone memory and may fail to load. Reducing context also reduces an oversized reply limit.</Text>
+    <Text style={styles.controlHint}>{knownContextLimit ? `Model context limit: ${knownContextLimit.toLocaleString()} tokens.` : 'Model limit unavailable: up to 32,768 tokens can be requested; support is unverified until model metadata is read.'} Saved here. Use Load model to apply a changed context before chatting. Larger windows need more phone memory and may fail to load. Reducing context also reduces an oversized reply limit.</Text>
     {inferenceControlsDisabled && <Text accessibilityLiveRegion="polite" style={styles.controlHint}>Options are available when the model finishes its current task.</Text>}
   </View>;
 
@@ -808,10 +844,10 @@ function PhoneGptApp() {
           <ScrollView ref={messageListRef} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={[styles.chatArea, currentChat && styles.messagesArea]} keyboardShouldPersistTaps="handled" onContentSizeChange={scrollToLatest} onLayout={scrollToLatest} scrollEventThrottle={16}
             {...(Platform.OS === 'web' ? {
               onWheel: (event: { nativeEvent?: { deltaY?: number }; deltaY?: number }) => {
-                if ((event.nativeEvent?.deltaY ?? event.deltaY ?? 0) < 0) followLatest.current = false;
+                if ((event.nativeEvent?.deltaY ?? event.deltaY ?? 0) < 0) { pendingSendScroll.current = false; followLatest.current = false; }
               },
               onKeyDown: (event: { key?: string }) => {
-                if (['ArrowUp', 'PageUp', 'Home'].includes(event.key ?? '')) followLatest.current = false;
+                if (['ArrowUp', 'PageUp', 'Home'].includes(event.key ?? '')) { pendingSendScroll.current = false; followLatest.current = false; }
               },
             } : {})}
             onTouchStart={pauseFollowing}
@@ -820,13 +856,14 @@ function PhoneGptApp() {
             onScrollBeginDrag={(event) => { if (event?.nativeEvent?.contentOffset) updateScrollPosition(event); pauseFollowing(); }}
             onScroll={updateScrollPosition}
             onScrollEndDrag={(event) => { updateScrollPosition(event); readingWithGesture.current = false; }}
-            onMomentumScrollBegin={() => { readingWithGesture.current = true; }}
+            onMomentumScrollBegin={() => { if (!pendingSendScroll.current) readingWithGesture.current = true; }}
             onMomentumScrollEnd={(event) => { updateScrollPosition(event); readingWithGesture.current = false; scrollToLatest(); }}>
             {!currentChat && <Text style={styles.versionText}>PhoneGPT {APP_VERSION}</Text>}
-            {visibleMessages.map((item) => <View key={item.id} style={[styles.messageBubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}><View style={{ minWidth: 0, maxWidth: '100%' }}>{item.attachments?.map((file, index) => <Text key={`${file.name}-${index}`} selectable style={[styles.attachmentText, { color: item.role === 'user' ? colors.userText : colors.secondary, marginBottom: 6 }]}>📄 {file.name}</Text>)}{item.web && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600', marginBottom: 6 }}>From the web</Text>}<MessageContent content={item.content} color={item.role === 'user' ? colors.userText : colors.text} />{item.web && <WebSources provenance={item.web} />}</View></View>)}
-            {isGenerating && webPhase !== 'searching' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={colors.primary} size="small" /><Text accessibilityLiveRegion="polite" style={styles.generatingText}>{isStopping ? 'Stopping…' : webPhase === 'deciding' ? 'Checking whether to search…' : 'Generating locally…'}</Text></View>}
+            {visibleMessages.map((item) => <View key={item.id} style={{ minWidth: 0 }}>{/* Keep each routing summary beside its own question. */}<View style={[styles.messageBubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}><View style={{ minWidth: 0, maxWidth: '100%' }}>{item.attachments?.map((file, index) => <Text key={`${file.name}-${index}`} selectable style={[styles.attachmentText, { color: item.role === 'user' ? colors.userText : colors.secondary, marginBottom: 6 }]}>📄 {file.name}</Text>)}{item.searchLimit && <Text accessibilityLiveRegion="polite" style={{ color: colors.secondary, fontSize: 12, marginBottom: 8 }}>{searchLimitNotice(item.searchLimit)}</Text>}{item.web && <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600', marginBottom: 6 }}>From the web</Text>}<MessageContent content={item.content} color={item.role === 'user' ? colors.userText : colors.text} />{item.web && <WebSources provenance={item.web} />}</View></View>{item.role === 'user' && item.searchDecision && <SearchDecision decision={item.searchDecision} active={isGenerating && item.id === currentChat?.messages[currentChat.messages.length - 1]?.id} />}</View>)}
+            <WebSearchOverlay visible={isGenerating && webPhase === 'searching'} />
+            {isGenerating && searchLimitForTurn && searchLimitForTurn.chatId === currentChat?.id && searchLimitForTurn?.userId === currentChat?.messages[currentChat.messages.length - 1]?.id && !streamingReply && <Text accessibilityLiveRegion="polite" style={styles.contextHint}>{searchLimitNotice(searchLimitForTurn.details)}</Text>}
+            {isGenerating && webPhase !== 'searching' && webPhase !== 'deciding' && <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={colors.primary} size="small" /><Text accessibilityLiveRegion="polite" style={styles.generatingText}>{isStopping ? 'Stopping…' : 'Generating locally…'}</Text></View>}
           </ScrollView>
-          <WebSearchOverlay visible={isGenerating && webPhase === 'searching'} />
           </View>
           <View style={[styles.composerWrap, { paddingBottom: keyboardVisible ? 6 : Math.max(insets.bottom, 12) }]}>
             {voice.model && <Text style={{ color: colors.secondary, fontSize: 12, marginBottom: 6 }} accessibilityLabel={`Voice model: ${voice.model.displayName}`}>Voice: {voice.model.displayName}{voice.mode === 'live' ? ' · Live' : ''}</Text>}

@@ -1,9 +1,28 @@
 import { WEB_SEARCH_API_URL, WEB_SEARCH_FEATURE_ENABLED, WEB_SEARCH_RESULT_LIMIT } from '../config/webSearch';
 import type { WebSearchResult, WebSource } from './webSearchTypes';
 
-export type WebSearchErrorCode = 'disabled' | 'invalid_query' | 'invalid_endpoint' | 'aborted' | 'timeout' | 'network' | 'provider' | 'invalid_response' | 'context_overflow';
+export type WebSearchErrorCode = 'disabled' | 'invalid_query' | 'invalid_endpoint' | 'aborted' | 'timeout' | 'network' | 'provider' | 'invalid_response' | 'context_overflow' | 'rate_limited' | 'daily_quota';
 export class WebSearchError extends Error {
   constructor(public code: WebSearchErrorCode, message: string) { super(message); this.name = 'WebSearchError'; }
+}
+
+export type SearchRateLimitDetails = { kind: 'rate_limited' | 'daily_quota'; limit?: number; resetAt?: string; windowStartedAt?: string };
+export class WebSearchRateLimitError extends WebSearchError {
+  constructor(public details: SearchRateLimitDetails) { super(details.kind, 'Web search limit reached.'); }
+}
+
+function rateLimitDetails(data: unknown, retryHeader: string | null): SearchRateLimitDetails {
+  const error = data && typeof data === 'object' ? (data as { error?: Record<string, unknown> }).error : undefined;
+  const details: SearchRateLimitDetails = { kind: error?.code === 'daily_quota' ? 'daily_quota' : 'rate_limited' };
+  if (typeof error?.limit === 'number' && Number.isSafeInteger(error.limit) && error.limit >= 1 && error.limit <= 1000000) details.limit = error.limit;
+  const seconds = typeof error?.retryAfterSeconds === 'number' ? error.retryAfterSeconds : Number(retryHeader);
+  const now = Date.now();
+  const reset = typeof error?.resetAt === 'string' ? Date.parse(error.resetAt) : NaN;
+  if (Number.isFinite(reset) && reset >= now - 60000 && reset <= now + 86460000) details.resetAt = new Date(reset).toISOString();
+  else if (Number.isInteger(seconds) && seconds >= 1 && seconds <= 86400) details.resetAt = new Date(now + seconds * 1000).toISOString();
+  const start = typeof error?.windowStartedAt === 'string' ? Date.parse(error.windowStartedAt) : NaN;
+  if (details.resetAt && Number.isFinite(start) && start <= now && start < Date.parse(details.resetAt) && start >= now - 86400000) details.windowStartedAt = new Date(start).toISOString();
+  return details;
 }
 
 /** Explicit per-message choices take priority over automatic routing. */
@@ -92,7 +111,7 @@ export async function searchWeb(query: string, options: { signal?: AbortSignal; 
   try {
     const task = async () => {
       const response = await fetch(`${base}/v1/search`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ query, limit: WEB_SEARCH_RESULT_LIMIT }), signal: controller.signal, redirect: 'error' });
-      if (!response.ok) throw new WebSearchError('provider', `Search service returned HTTP ${response.status}.`);
+      if (!response.ok && response.status !== 429) throw new WebSearchError('provider', `Search service returned HTTP ${response.status}.`);
       const length = response.headers.get('content-length');
       if (length && (!/^\d+$/.test(length) || Number(length) > MAX_RESPONSE_BYTES)) throw new WebSearchError('invalid_response', 'Search response is too large.');
       let raw: string;
@@ -100,7 +119,8 @@ export async function searchWeb(query: string, options: { signal?: AbortSignal; 
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let size = 0; raw = '';
         try { while (true) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > MAX_RESPONSE_BYTES) { void reader.cancel(); throw new WebSearchError('invalid_response', 'Search response is too large.'); } raw += decoder.decode(part.value, { stream: true }); } raw += decoder.decode(); } finally { reader.releaseLock(); }
       } else { raw = await response.text(); if (bytes(raw) > MAX_RESPONSE_BYTES) throw new WebSearchError('invalid_response', 'Search response is too large.'); }
-      let data: unknown; try { data = JSON.parse(raw); } catch { throw new WebSearchError('invalid_response', 'Invalid search response JSON.'); }
+      let data: unknown; try { data = JSON.parse(raw); } catch { if (response.status !== 429) throw new WebSearchError('invalid_response', 'Invalid search response JSON.'); }
+      if (response.status === 429) throw new WebSearchRateLimitError(rateLimitDetails(data, response.headers.get('retry-after')));
       return normalize(data, query);
     };
     return await Promise.race([task(), interrupted]);

@@ -33,14 +33,15 @@ test('a large reply ceiling automatically fits the current input without rejecti
   assert.equal(api.availableReplyTokens(4096, 4000, 384), 0);
 });
 test('native initialization receives the GGUF-bounded context and completion receives a custom long reply budget', async () => {
-  const inference = {}; const calls = {};
+  const inference = {}; const calls = { allocations: 0, releases: 0 };
   const code = ts.transpileModule(fs.readFileSync('src/services/localInference.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
   vm.runInNewContext(code, { exports: inference, require: name => {
+    if (name === '../config/systemPrompt') { const result = {}; vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/config/systemPrompt.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: result }); return result; }
     if (name === './tokenLimits') return api;
     if (name === 'react-native') return { Platform: { OS: 'android' } };
     if (name === 'llama.rn') return {
       loadLlamaModelInfo: async () => ({ 'general.architecture': 'test', 'test.context_length': 131072 }),
-      initLlama: async params => { calls.init = params; return { release: async () => {}, completion: async params => { calls.completion = params; return { text: 'Done' }; } }; },
+      initLlama: async params => { calls.allocations++; calls.init = params; return { release: async () => { calls.releases++; }, completion: async params => { calls.completion = params; return { text: 'Done' }; } }; },
     };
     throw Error(name);
   } });
@@ -48,6 +49,14 @@ test('native initialization receives the GGUF-bounded context and completion rec
   assert.equal(calls.init.n_ctx, 131072); assert.equal(loaded.contextSize, 131072); assert.equal(loaded.maxContextTokens, 131072);
   await inference.generateLocalReply([], { reasoningMode: 'off', contextSize: 131072, maxTokens: 100000 });
   assert.equal(calls.completion.n_predict, 100000);
+  await inference.loadLocalModel({}, 'test.gguf', 131072);
+  assert.equal(calls.allocations, 1, 'unchanged preference reuses the ready model');
+  await inference.loadLocalModel({}, 'test.gguf', 4096);
+  assert.equal(calls.allocations, 2, 'next use with a changed context reinitializes');
+  assert.equal(calls.releases, 1, 'old allocation is released before replacement');
+  assert.equal(calls.init.n_ctx, 4096);
+  await inference.loadLocalModel({}, 'test.gguf', 4096);
+  assert.equal(calls.allocations, 2, 'subsequent turns reuse the new allocation');
 });
 
 test('10k and 20k contexts are opt-in while a known smaller model limit still wins', () => {

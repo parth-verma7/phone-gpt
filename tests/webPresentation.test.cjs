@@ -27,6 +27,7 @@ test('search overlay is app-owned, removable, accessible and does not block comp
   'react/jsx-runtime':{jsx,jsxs:jsx},
   'react-native':{ActivityIndicator:'Spinner',View:'View',StyleSheet:{absoluteFillObject:{position:'absolute'}}},
   './ScaledText':{ScaledText:'Text'},
+  './AppIcon':{AppIcon:'Icon'},
   '../theme/AppTheme':{useAppTheme:()=>({colors:{surface:'#fff',text:'#111',primary:'#066',border:'#ddd'}})},
  });
  assert.equal(WebSearchOverlay({visible:false}),null);
@@ -36,6 +37,9 @@ test('search overlay is app-owned, removable, accessible and does not block comp
  assert.equal(card.props.accessibilityRole,'progressbar');
  assert.equal(card.props.accessibilityState.busy,true);
  assert.equal(card.props.children[1].props.children,'Searching the web…');
+ assert.equal(card.props.style.position,undefined);
+ assert.equal(overlay.props.style.position,undefined);
+ assert.equal(card.props.children[2].props.size,'small');
 });
 
 test('active search input is visible before the first reply and stays scoped to that turn',()=>{
@@ -65,4 +69,27 @@ test('Web on is a filled accent control and off is a neutral surface with explic
   assert.equal(control.props.children[0].props.color,enabled?'on-accent':'secondary');
   assert.equal(control.props.children[1].props.style.color,enabled?'on-accent':'secondary');
  }
+});
+
+test('search decision is collapsed by default, expandable, and interrupted checks never spin forever',()=>{
+ let expanded=false;
+ const jsx=(type,props)=>({type,props});
+ const {SearchDecision}=load('src/components/SearchDecision.tsx',{
+  react:{useState:()=>[expanded,value=>{expanded=typeof value==='function'?value(expanded):value}]},
+  'react/jsx-runtime':{jsx,jsxs:jsx},'react-native':{Pressable:'Button',ActivityIndicator:'Spinner',View:'View'},
+  './ScaledText':{ScaledText:'Text'},'./AppIcon':{AppIcon:'Icon'},'../theme/AppTheme':{useAppTheme:()=>({colors:{}})},
+ });
+ let card=SearchDecision({decision:'checking',active:true});
+ assert.equal(card.props.children[0].props.accessibilityState.busy,true);
+ assert.equal(card.props.children[1],false);
+ card.props.children[0].props.onPress();
+ card=SearchDecision({decision:'search'});
+ assert.equal(card.props.children[0].props.accessibilityState.expanded,true);
+ assert.equal(card.props.children[0].props.accessibilityLabel,'Web search chosen');
+ assert.match(card.props.children[1].props.children,/Web information will be used/);
+ card=SearchDecision({decision:'local'});
+ assert.equal(card.props.children[0].props.accessibilityLabel,'Continuing without search');
+ card=SearchDecision({decision:'checking',active:false});
+ assert.equal(card.props.children[0].props.accessibilityState.busy,false);
+ assert.equal(card.props.children[0].props.accessibilityLabel,'Search check interrupted');
 });

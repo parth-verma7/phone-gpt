@@ -1,6 +1,6 @@
 import { ScaledText as Text } from './ScaledText';
 import React, { type ReactNode } from 'react';
-import { Platform, StyleSheet, View, type TextStyle } from 'react-native';
+import { Alert, Linking, Platform, StyleSheet, View, type TextStyle } from 'react-native';
 
 type MessageContentProps = {
   content: string;
@@ -16,7 +16,21 @@ type Block =
 const ORDERED_ITEM = /^\s*(\d+)\.\s+(.+)$/;
 const BULLET_ITEM = /^\s*[-*+]\s+(.+)$/;
 const HEADING = /^(#{1,6})\s+(.+)$/;
-const INLINE_TOKENS = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+const INLINE_TOKENS = /(\[[^\]\n]+\]\((?:[^()\s]|\([^()\s]*\))*\)|\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s<>`]+)/g;
+
+function safeMessageUrl(value: string): string | undefined {
+  try {
+    if (/[\s\u0000-\u001f\u007f]/.test(value)) return undefined;
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password) return undefined;
+    return url.href;
+  } catch { return undefined; }
+}
+
+async function openMessageLink(url: string) {
+  try { await Linking.openURL(url); }
+  catch { Alert.alert('Unable to open link', 'Please try again.'); }
+}
 
 function parseBlocks(content: string): Block[] {
   const blocks: Block[] = [];
@@ -82,10 +96,23 @@ function renderInline(text: string, color: string): ReactNode[] {
     if (start > lastIndex) nodes.push(text.slice(lastIndex, start));
 
     const token = match[0];
-    if (token.startsWith('**')) {
+    const markdownLink = /^\[([^\]]+)\]\((.*)\)$/.exec(token);
+    if (markdownLink || /^https?:\/\//.test(token)) {
+      let target = markdownLink?.[2] ?? token;
+      let suffix = '';
+      if (!markdownLink) {
+        target = target.replace(/[.,!?;:]+$/, '');
+        while (target.endsWith(')') && (target.match(/\)/g)?.length ?? 0) > (target.match(/\(/g)?.length ?? 0)) target = target.slice(0, -1);
+        suffix = token.slice(target.length);
+      }
+      const url = safeMessageUrl(target);
+      if (url) nodes.push(<Text key={`${start}-link`} accessibilityRole="link" accessibilityLabel={markdownLink?.[1] ?? target} accessibilityHint={url} onPress={() => { void openMessageLink(url); }} style={{ color, textDecorationLine: 'underline' }}>{markdownLink ? renderInline(markdownLink[1], color) : target}</Text>);
+      else nodes.push(token);
+      if (suffix) nodes.push(suffix);
+    } else if (token.startsWith('**')) {
       nodes.push(
         <Text key={`${start}-bold`} style={styles.bold}>
-          {token.slice(2, -2)}
+          {renderInline(token.slice(2, -2), color)}
         </Text>,
       );
     } else {

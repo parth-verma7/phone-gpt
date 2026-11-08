@@ -21,9 +21,9 @@ export function SettingsContent({ bottomInset, promptSettings, modelControls, on
       </View>
       <ThemeColorSettings />
     </SettingsCard>
-    {onAppInfo && <SettingsCard title="About PhoneGPT" icon="info" description="App information, privacy and a way to get in touch."><ActionButton label="App info & contact" icon="info" onPress={onAppInfo} /></SettingsCard>}
     <FontSizeSettings />
-    <SystemPromptSettings settings={promptSettings} />
     <SettingsCard title="Generation" icon="settings" description="Adjust replies and memory. Larger limits use more time and phone memory.">{modelControls}</SettingsCard>
+    <SystemPromptSettings settings={promptSettings} />
+    {onAppInfo && <SettingsCard title="About PhoneGPT" icon="info" description="App information, privacy and a way to get in touch."><ActionButton label="App info & contact" icon="info" onPress={onAppInfo} /></SettingsCard>}
   </ScrollView>;
 }

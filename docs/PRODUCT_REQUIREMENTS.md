@@ -1,6 +1,8 @@
 # PhoneGPT — Product requirements
 
-Owner: Parth Verma. Last updated: 2026-11-06.
+Current Android delivery (2026-11-08): standalone **0.5.12/code 26** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.10.md).
+
+Owner: Parth Verma. Last updated: 2026-11-08.
 Status: living product specification for the Android MVP. Implementation details belong in [Technical design](TECHNICAL_DESIGN.md); delivery status belongs in [Project tracker](../PROJECT_TRACKER.md).
 
 ## 1. Purpose
@@ -98,11 +100,11 @@ Catalog labels follow model publishers' descriptions. Uncensored/abliterated is 
 ### Settings
 
 - Save light/dark mode, app-wide text-size presets (0.5×, 0.8×, 1×, 1.2×, 1.5×; default 0.8×) and generation preferences locally.
-- Save an optional System Prompt; snapshot it when a new conversation first sends a message and reuse that snapshot for the conversation. Existing chats keep their original prompt.
+- Display a prefilled editable PhoneGPT System Prompt; snapshot it when a new conversation first sends a message and reuse that snapshot for the conversation. Existing chats keep their original prompt.
 - Offer reasoning requests Off/Short/Extended, with behavior dependent on the model/template.
 - Show current-chat context usage; explain that the visible counter excludes the hidden system prompt/template overhead.
 - **Current 0.5.1 build:** reply presets 384/512/768, slider and custom integer input, starting at 384. Context starts at 1,024 with presets, slider and custom input extending to the model-reported context ceiling. Defaults remain 384 reply / 2,048 context.
-- Presets are shortcuts, not maximum values. Larger reply settings require a sufficiently large active context; prompt/history also occupy that window. Context changes reload the model after committing the change, not during every slider movement.
+- Presets are shortcuts, not maximum values. Larger reply settings require a sufficiently large active context; prompt/history also occupy that window. Apply saves context without navigating away. A changed window marks a ready model as requiring an explicit Load model action before chatting; Send never loads the model.
 - Reject invalid custom values and explain the allowed range. A supported model context does not guarantee the phone has enough RAM to allocate it.
 
 ### App Info and contact
@@ -182,7 +184,7 @@ Automatic website deployment verified November 5: first push-triggered GitHub Ac
 
 Website visual alignment (November 5): model discovery, setup and contact share bounded panels with consistent pale green tint, corner radius and responsive page gutters. Very narrow headers omit the secondary download CTA to prevent crowding. Mobile app UI is unchanged.
 
-Android delivery: verified standalone 0.5.9 / code 23 contains current shared product features including optional web search. Existing Dev 0.5.4 receives 0.5.9 JavaScript through Metro. Installation/export/native inference still require A54 acceptance.
+Android delivery: verified standalone 0.5.10 / code 24 contains current shared product features including optional web search. Existing Dev 0.5.4 receives 0.5.10 JavaScript through Metro. Installation/export/native inference still require A54 acceptance.
 
 ## Planned model memory/device guidance
 
@@ -219,7 +221,7 @@ Android export currently requires a selectable destination subfolder, for exampl
 
 ### Applying generation limits
 
-Maximum reply length and Conversation context share one editing flow: the current draft number appears once in the numeric field. Slider movement, preset taps and typed edits update that draft. Apply is solid teal for a valid pending change and subdued/disabled once the value is applied or unchanged. Only Apply commits the setting; context reload occurs on commit, not on every drag or preset tap. Invalid numbers cannot be applied and range guidance remains visible.
+Maximum reply length and Conversation context share one editing flow: the current draft number appears once in the numeric field. Slider movement, preset taps and typed edits update that draft. Apply is solid teal for a valid pending change and subdued/disabled once the value is applied or unchanged. Only Apply commits the setting and stays on the current screen. Context reinitialization happens only through an explicit Load model action, never during dragging, preset taps, Apply or Send. Invalid numbers cannot be applied and range guidance remains visible.
 
 Standalone 0.5.5 / code 19 has now been built and verified with the local export, shared controls, 0.8× default font size, explicit token Apply flow and hidden uncensored catalog. Web search remains gated off in production. Physical device verification is pending.
 
@@ -268,3 +270,33 @@ Web on uses a filled accent surface with contrasting label/icon; off uses a neut
 Standalone 0.5.9/code 23 includes the navigation/editing/preview/web fixes. Build and update-signature verification passed against 0.5.8; 180 automated assertions and TypeScript passed. Native A54 acceptance is pending. The earlier 0.5.8 repository sync was explicitly pushed to GitHub at 7d3794e; the owner authorized publishing the 0.5.9 feature set on 2026-11-07. Native A54 acceptance remains a separate check.
 
 Chat-list timestamp refinement (2026-11-07): display only the conversation start time on each row, without a second date label. Keep full creation date/time in stored metadata, export and accessibility labels. Ordering still uses creation time; new messages do not change the displayed start time.
+
+### Visible PhoneGPT prompt
+
+Settings shows the actual default instructions as editable text, rather than a blank field hiding the default. The current default is:
+
+> You are PhoneGPT, a helpful assistant. Answer the user's request directly and naturally, using brief paragraphs or clear bullet points as appropriate. Introduce yourself only when asked. When useful, end with one short, relevant follow-up question or offer to explore a related option.
+
+Saved custom preferences remain intact. A blank/missing saved preference displays and uses this default; saving an empty edit restores it visibly. Ordinary and web-grounded answers use the same identity. New chats snapshot the selected instructions; existing custom-prompt conversations keep their instructions. The request for direct answers avoids unnecessary name-prefaces; model adherence still needs device testing. Follow-up questions/offers are optional when relevant, not mandatory on every reply.
+
+Settings groups follow the order Appearance, Text size, Generation, System prompt, then About PhoneGPT. Information/contact navigation remains at the bottom so frequently adjusted preferences come first. This ordering is implemented in shared source/Dev; standalone delivery is separate.
+
+The editable default prompt asks web-assisted answers to omit source/website/link-number narration in the response text. Web grounding reinforces this for existing and custom-prompt chats; separate source cards remain available. Explicit user requests for attribution can still be answered. This is a source/Dev update; saved custom instructions are not overwritten.
+
+Web-enabled turns show a collapsed search-decision summary below their question, with an expandable short explanation. Checking, web search and final local generation are distinct stages; no draft answer or raw router output is presented. The final answer remains expanded. Interrupted checks stop showing an active indicator. Replies support clickable Markdown links and bare HTTP(S) URLs when the model supplies a valid address; plain website names are not converted into guessed URLs. The default prompt requests relevant, correctly formatted links and avoids unsolicited site recommendations. These changes are shared source/Dev, pending native acceptance.
+
+The public website prominently explains optional web search, local answer generation, offline mode, separate source links and the online-search privacy boundary. FAQs disclose explicit-search overrides of the Web toggle. The Android download now points to the search-capable 0.5.10 release; website content does not offer a browser-based AI chat.
+
+### Search quota recovery — 0.5.11
+
+Web search allows ten reservations per public network address in a one-hour window beginning with the first counted search. Devices sharing Wi-Fi/mobile egress share this allowance; this is not per signed-in user. The existing service-wide 50-search UTC-day cap remains. When a limit blocks search, show the server window start and reset time in the device locale, then provide a local answer without fresh evidence. The model must not claim online verification or invent current facts. There is no automatic retry when time expires; the next requested search checks the server again. Local chat/voice remain usable. App changes are shared source/Dev until a verified standalone release is built; server deployment is tracked separately.
+
+Quota controls are Cloudflare-only SEARCH_HOURLY_LIMIT=10 and SEARCH_DAILY_LIMIT=50 variables read by the server-side Durable Object; no client-supplied limit is trusted. Changing server quota values does not require an APK rebuild. Worker rollout succeeded on 2026-11-08 (version ce728abf-1970-4030-86d4-b113dfc52e4c); the mobile reset-time/fallback display still needs the new APK and native acceptance. Public source code does not grant access to the owner’s deployed configuration or Brave secret.
+
+Standalone 0.5.11/code 25 is now built and verified from 64 current application source inputs, including rate-limit timestamps and local fallback; its certificate matches 0.5.10. All 22 mobile test files and TypeScript pass. The hourly Worker is deployed with configuration verified in Cloudflare; an invalid empty-query smoke test returned HTTP 400 without consuming provider quota. Native A54 behavior remains an acceptance check.
+
+Current source/Dev replaces the centred web-search overlay with a compact inline activity box matching search-decision styling; it disappears before local answer generation and does not cover messages. Send resets stale scroll geometry and holds the request to follow the newest content through old momentum/layout events. A newer touch, drag or upward wheel/keyboard action cancels that request, preserving manual reading priority. The search Worker endpoint remains public in the app by design: runtime indirection cannot make a used URL secret. Server-side quotas and private Brave credentials remain the access/budget boundary.
+
+The owner’s 2026-11-08 device check confirmed that replies after the web quota displayed the limit/reset notice and continued locally. They were not additional successful web searches. No query/raw-IP logs were enabled for the investigation.
+
+Production 0.5.12/code 26 now embeds the compact search activity and Send-scroll changes, verified against 64 current source inputs and the prior signing certificate. The rate-limit investigation is resolved by owner feedback as expected local fallback after rejection, with no server configuration change. Native UI/scroll acceptance remains separate.

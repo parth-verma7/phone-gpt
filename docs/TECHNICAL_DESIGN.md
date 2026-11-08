@@ -1,6 +1,8 @@
 # PhoneGPT — Technical design
 
-Owner: Parth Verma. Last updated: 2026-11-06.
+Current Android delivery (2026-11-08): standalone **0.5.12/code 26** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.10.md).
+
+Owner: Parth Verma. Last updated: 2026-11-08.
 Status: description of the current repository and explicit deferred decisions. Product behavior and scope are defined in [Product requirements](PRODUCT_REQUIREMENTS.md). Tasks and verification gaps are in [Project tracker](../PROJECT_TRACKER.md).
 
 This document records the implementation and its rationale. Where earlier alternatives were discussed but no measured comparison was performed, the rationale below explains the current design's fit; it does not claim a benchmark or formal evaluation occurred.
@@ -86,7 +88,7 @@ App updates with the same identity/signature normally preserve data. Uninstall/c
 
 ## 5. Multi-turn chat, context and prompt design
 
-Every send prepares the full transcript of the current chat in order. It prepends one hidden system-role message using the conversation's saved prompt, or the default assistant prompt (currently named Parth). A new chat snapshots the user's saved prompt at its first send. This prevents later global prompt edits from silently changing an existing chat's instruction.
+Every send prepares the full transcript of the current chat in order. It prepends one hidden system-role message using the conversation's saved prompt, or the shared default PhoneGPT prompt. A new chat snapshots the user's saved prompt (including the visible default) at its first send. This prevents later global prompt edits from silently changing an existing chat's instruction.
 
 Saved conversations provide persistence, not cross-conversation retrieval. No summary memory, embeddings, vector search or cross-chat prompt injection is implemented. History substring search is a UI feature and does not feed other chats to the model.
 
@@ -109,7 +111,7 @@ An input with no room left is rejected with a recovery message rather than silen
 
 The visible tracker counts the current conversation, including attachment content, but excludes hidden instructions/template overhead. Its number is intentionally different from request budgeting.
 
-The dependency-free slider uses PanResponder with local preview state, logarithmic positioning and accessibility range/actions. It commits on release; custom values commit on Apply. This makes large ranges usable without adding a native slider dependency or repeatedly reloading a model while dragging. Context changes require reinitialization; a load failure leaves the model unready and offers normal recovery with a smaller window.
+The dependency-free slider uses PanResponder with local preview state, logarithmic positioning and accessibility range/actions. Slider movement, presets and custom values stage a draft; only Apply commits it. This makes large ranges usable without adding a native slider dependency or repeatedly reloading a model while dragging. Apply persists context preferences without invoking the navigation-producing model loader. Changing the context on a ready model marks it installed/unready without immediately allocating or releasing the native context. Send is gated until the user explicitly presses Load model; it never calls loadLocalModel. Explicit loading applies metadata-normalized settings and offers normal recovery with a smaller window if allocation fails. The old resident allocation cannot be used with the newly saved context budget.
 
 ## 6. Generation and UI coordination
 
@@ -348,3 +350,35 @@ Ambiguous queries use a deterministic-temperature, reasoning-off local completio
 Standalone 0.5.9/code 23 includes the navigation/editing/preview/web fixes. Build and update-signature verification passed against 0.5.8; 180 automated assertions and TypeScript passed. Native A54 acceptance is pending. The earlier 0.5.8 repository sync was explicitly pushed to GitHub at 7d3794e; the owner authorized publishing the 0.5.9 feature set on 2026-11-07. Native A54 acceptance remains a separate check.
 
 Chat-list timestamp refinement (2026-11-07): display only the conversation start time on each row, without a second date label. Keep full creation date/time in stored metadata, export and accessibility labels. Ordering still uses creation time; new messages do not change the displayed start time.
+
+### Shared prompt configuration and Settings hydration
+
+`src/config/systemPrompt.ts` owns DEFAULT_SYSTEM_PROMPT and resolveSystemPrompt. Inference and web grounding both use that resolver, removing the duplicate Parth fallback. The Settings hook initializes with the same default and treats blank/missing storage as default while retaining saved custom values. No migration overwrites custom preferences. Save persists edited text or the restored default and updates the field; failed writes preserve the prior saved value and edited draft. Existing chats with empty/absent prompt snapshots resolve the new default, while explicit custom snapshots remain unchanged. Reasoning-short/extended additions still apply when the selected text equals the default; custom prompts retain their existing precedence. The rendered Settings default is the base instruction; selected reasoning and per-turn web evidence add their existing specialized instructions. Tests cover hydration, default visibility, preserving custom values, blank reset, save failure and shared inference/grounding identity. Native model response style remains a device acceptance check.
+
+Settings groups follow the order Appearance, Text size, Generation, System prompt, then About PhoneGPT. Information/contact navigation remains at the bottom so frequently adjusted preferences come first. This ordering is implemented in shared source/Dev; standalone delivery is separate.
+
+The editable default prompt asks web-assisted answers to omit source/website/link-number narration in the response text. Web grounding reinforces this for existing and custom-prompt chats; separate source cards remain available. Explicit user requests for attribution can still be answered. This is a source/Dev update; saved custom instructions are not overwritten.
+
+Search routing stores an optional app-authored searchDecision (checking/search/local) on the associated user message. SearchDecision starts collapsed and exposes a brief status summary, not the router’s raw YES/NO output or internal reasoning. Terminal/interrupted checking records display as interrupted when no turn is active; existing chats without metadata are unchanged. No extra inference/search call is introduced. MessageContent handles Markdown inline links and bare URLs, underlined with an accessible link role, and opens validated HTTP(S) destinations using React Native Linking. Unsafe schemes/credential-bearing URLs remain literal; opener errors show a brief alert. URL rendering cannot validate factual accuracy or make plain model-mentioned website names into real links.
+
+Website search information is a reusable static WebSearchSection on the home and Features pages, with shared FAQ and a privacy anchor. It never invokes the search Worker from the browser. Static export verification checks those sections and the search-capable APK URL; APK bytes are hosted as a GitHub Release asset, separate from Git source. Existing GitHub Actions publishes the website to Cloudflare Pages.
+
+### Hourly quota and 429 recovery — 2026-11-08
+
+The existing single Quota Durable Object transaction enforces 50 reservations per UTC day and 10 per HMAC-IP identity in a one-hour window starting at first reservation. The hourly key stores count/startedAt/expires, never query text or raw IP. Denials do not consume daily quota or extend expiry. Existing daily keys survive the rollout. A 429 carries bounded retryAfterSeconds plus windowStartedAt/resetAt ISO timestamps; the client validates metadata or uses numeric Retry-After when available. WebSearchRateLimitError carries the typed details. Only 429 triggers a single local-generation fallback, with explicit no-fresh-evidence instructions counted in the context budget. UI metadata is stored with the reply, separate from the answer text, with no source cards or web-grounding claim. Abort still stops the turn, other search errors retain existing behavior, and expiry does not schedule retries. Shared source requires a new standalone binary for installed Prod users.
+
+Quota controls are Cloudflare-only SEARCH_HOURLY_LIMIT=10 and SEARCH_DAILY_LIMIT=50 variables read by the server-side Durable Object; no client-supplied limit is trusted. Changing server quota values does not require an APK rebuild. Worker rollout succeeded on 2026-11-08 (version ce728abf-1970-4030-86d4-b113dfc52e4c); the mobile reset-time/fallback display still needs the new APK and native acceptance. Public source code does not grant access to the owner’s deployed configuration or Brave secret.
+
+Standalone 0.5.11/code 25 is now built and verified from 64 current application source inputs, including rate-limit timestamps and local fallback; its certificate matches 0.5.10. All 22 mobile test files and TypeScript pass. The hourly Worker is deployed with configuration verified in Cloudflare; an invalid empty-query smoke test returned HTTP 400 without consuming provider quota. Native A54 behavior remains an acceptance check.
+
+The website derives both APK and release-detail links from its shared APP_VERSION, used by the homepage and separate Downloads route. Static export verification checks both pages against the current release to prevent an updated version label retaining an old binary URL.
+
+Current source/Dev replaces the centred web-search overlay with a compact inline activity box matching search-decision styling; it disappears before local answer generation and does not cover messages. Send resets stale scroll geometry and holds the request to follow the newest content through old momentum/layout events. A newer touch, drag or upward wheel/keyboard action cancels that request, preserving manual reading priority. The search Worker endpoint remains public in the app by design: runtime indirection cannot make a used URL secret. Server-side quotas and private Brave credentials remain the access/budget boundary.
+
+The owner’s 2026-11-08 device check confirmed that replies after the web quota displayed the limit/reset notice and continued locally. They were not additional successful web searches. No query/raw-IP logs were enabled for the investigation.
+
+Production 0.5.12/code 26 now embeds the compact search activity and Send-scroll changes, verified against 64 current source inputs and the prior signing certificate. The rate-limit investigation is resolved by owner feedback as expected local fallback after rejection, with no server configuration change. Native UI/scroll acceptance remains separate.
+
+Search Console ownership verification uses an owner-downloaded public HTML verification file in the website’s public assets. Static export preserves the exact bytes and root filename, with a regression check. Keep the file available for Google’s periodic ownership rechecks. No analytics or tracking SDK is introduced; upload/deployment is distinct from successful verification and sitemap submission.
+
+Cloudflare verification-file delivery uses a single static 200 rewrite to a byte-identical text asset to avoid Pages’ automatic .html canonical redirect. The original downloaded HTML file remains unchanged and the exact requested URL can return its contents directly.

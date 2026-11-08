@@ -54,7 +54,7 @@ function find(node, predicate) {
 }
 
 // Keep hook state between renders; native children remain inspectable callback surfaces.
-function hooks() {
+function hooks(initialTransform = value => value) {
   const cells = [];
   const references = [];
   let cursor = 0;
@@ -64,7 +64,7 @@ function hooks() {
     react: {
       useState(initial) {
         const i = cursor++;
-        if (!(i in cells)) cells[i] = typeof initial === 'function' ? initial() : initial;
+        if (!(i in cells)) cells[i] = initialTransform(typeof initial === 'function' ? initial() : initial);
         return [cells[i], (value) => { cells[i] = typeof value === 'function' ? value(cells[i]) : value; }];
       },
       useRef(initial) { const i = cursor++; if (!(i in cells)) { cells[i] = { current: initial }; references.push(cells[i]); } return cells[i]; },
@@ -73,8 +73,9 @@ function hooks() {
   };
 }
 
-function appHarness(os = 'android') {
-  const h = hooks();
+function appHarness(os = 'android', options = {}) {
+  const h = hooks(value => options.ready && value === 'checking' ? 'ready' : value);
+  const frames = [];
   let allocations = 0;
   const dependencies = {
     react: h.react,
@@ -100,10 +101,18 @@ function appHarness(os = 'android') {
   for (const match of fs.readFileSync(path.join(__dirname, '..', 'App.tsx'), 'utf8').matchAll(/from '([^']+)'/g)) {
     dependencies[match[1]] ??= new Proxy({}, { get: (_, key) => key });
   }
-  const { PhoneGptApp } = load('App.tsx', dependencies, { __DEV__: true }, '\nexport { PhoneGptApp };');
+  if (options.ready) {
+    dependencies['./src/config/webSearch'] = { WEB_SEARCH_FEATURE_ENABLED: false };
+    dependencies['./src/hooks/useVoiceTyping'] = { useVoiceTyping: () => ({ busy: false, isActive: () => false }) };
+    dependencies['./src/hooks/useSystemPromptSettings'] = { useSystemPromptSettings: () => ({ ready: true, savedPrompt: 'Test prompt' }) };
+    dependencies['./src/services/textAttachments'] = { messagesForInference: async messages => messages };
+    dependencies['./src/services/localInference'] = { ...dependencies['./src/services/localInference'], getInputTokenCount: async () => 1, generateLocalReply: async (_messages, _settings, _prompt, onText) => { onText('Reply'); return 'Reply'; } };
+  }
+  const { PhoneGptApp } = load('App.tsx', dependencies, { __DEV__: true, AbortController, requestAnimationFrame: fn => { frames.push(fn); return frames.length; }, setTimeout, clearTimeout }, '\nexport { PhoneGptApp };');
   return {
     render() { h.begin(); return PhoneGptApp(); },
     allocations: () => allocations,
+    flushFrames: () => { while (frames.length) frames.shift()(); },
     attachMessageList: list => { h.references[0].current = list; },
   };
 }
@@ -428,5 +437,32 @@ test('web upward wheel and keyboard intent pause before scroll position changes'
     list.onScroll(scrollPosition(1600));
     list.onContentSizeChange(400, 2000);
     assert.equal(scrolls.length, 1, 'scrolling down restores follow after web input');
+  }
+});
+
+
+test('Send resumes following despite stale upward scroll/momentum events, but a fresh user gesture still wins', async () => {
+  for (const userInterrupt of [false, true]) {
+    const app = appHarness('android', { ready: true });
+    component(app.render(), 'WelcomeHome').props.onChat();
+    let tree = app.render();
+    let list = find(tree, n => typeof n.props?.onContentSizeChange === 'function').props;
+    const scrolls = [];
+    app.attachMessageList({ scrollToEnd: options => scrolls.push(options) });
+    list.onScroll(scrollPosition(1600));
+    list.onScrollBeginDrag(scrollPosition(1600));
+    list.onScroll(scrollPosition(300));
+    list.onScrollEndDrag(scrollPosition(300));
+    find(tree, n => n.type === 'ScaledTextInput').props.onChangeText('Hello again');
+    tree = app.render();
+    await label(tree, 'Send message').props.onPress();
+    tree = app.render();
+    list = find(tree, n => typeof n.props?.onContentSizeChange === 'function').props;
+    list.onMomentumScrollBegin();
+    list.onScroll(scrollPosition(250));
+    if (userInterrupt) list.onTouchStart();
+    app.flushFrames();
+    list.onContentSizeChange(400, 2200);
+    assert.equal(scrolls.length, userInterrupt ? 0 : 2, userInterrupt ? 'a newer reading gesture cancels the queued send scroll' : 'Send reaches the newest message even if stale fling events arrive');
   }
 });

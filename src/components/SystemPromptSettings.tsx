@@ -18,7 +18,7 @@ export function SystemPromptSettings({ settings }: { settings: ReturnType<typeof
       editable={settings.ready && !settings.saving}
       style={{ minHeight: 130, maxHeight: 260, color: colors.text, backgroundColor: colors.raised, borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 15, lineHeight: 22 }}
     />
-    <Text style={{ color: colors.secondary, fontSize: 12 }}>Used privately in new chats. Leave blank for the default.</Text>
+    <Text style={{ color: colors.secondary, fontSize: 12 }}>Edit and save to use these instructions in new chats. Saving an empty box restores the default.</Text>
     <ActionButton label={settings.saving ? 'Saving…' : 'Save instructions'} icon="check" busy={settings.saving} disabled={!settings.ready} onPress={() => { void settings.save(); }} />
     {!!settings.notice && <Text accessibilityLiveRegion="polite" style={{ color: colors.success, fontSize: 12 }}>{settings.notice}</Text>}
     {!!settings.error && <Text accessibilityRole="alert" style={{ color: colors.error, fontSize: 12 }}>{settings.error}</Text>}

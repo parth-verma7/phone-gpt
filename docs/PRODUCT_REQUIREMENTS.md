@@ -314,3 +314,5 @@ Google Play delivery preparation (2026-11-09): a signed 0.5.13/code 27 upload bu
 ## Privacy policy access (0.5.14)
 
 Settings → App info & contact and the contact form provide a visible link to the PhoneGPT Privacy Policy. Users can read handling/retention/deletion details and use the contact form for privacy enquiries without exposing the inbox address publicly. The policy distinguishes local chat from web-search/contact requests, Android backups and exported copies. Data safety declaration submission and store approval remain separate.
+
+The public website also provides Terms of Use at /terms/, linked beside Privacy Policy in the shared footer. Terms explain current AI/model/search limitations and responsible service use without adding account/payment features or an acceptance screen.

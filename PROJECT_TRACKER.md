@@ -5,35 +5,23 @@ Scope: private, on-device model downloads and chat in one mobile repository, wit
 
 ## To-do
 
-- [ ] Saved prompt versions: verify history, unsaved-edit confirmation and restore on A54; confirm the compact action row at large text sizes. Shared source and verified standalone 0.5.13 contain this feature.
-
-- [ ] **Model RAM/device compatibility:** research exact quantizations, separate download storage from runtime RAM, account for context/cache and simultaneous voice-model memory, measure standalone peaks on A54, and show source-labelled estimates/device guidance. Start with Qwen 3.5 0.8B plus Whisper Tiny/Base. All catalog entries need coverage; no RAM minimum is verified yet. See [research and acceptance criteria](docs/MODEL_MEMORY_RESEARCH.md).
-
-- [ ] **A54 0.5.10 parity:** install the current standalone update, confirm App Info shows 0.5.10, and check both token sliders in Settings → Generation and expanded model options. See [verification](docs/RELEASE_0.5.10.md).
-
-- [ ] **Android / Play Store launch:** complete the [2026-11-03 readiness audit](docs/PLAY_STORE_READINESS.md). Not submission-ready: AI safeguards and in-app reporting, public privacy policy/backup decision, release permissions, upload signing/AAB, account/listing declarations, licensing and physical/required closed testing remain open. The About contact form is not an AI-reporting flow.
-- [ ] **iOS / App Store launch:** after native compilation/signing and iPhone verification, distribute through TestFlight and complete Apple privacy/listing/review requirements. No signed build or store submission yet.
-- [ ] **About/contact and Preferred badge on A54:** verify keyboard, validation, email-app handoff/fallback, light/dark and font sizes. Sending an actual support email remains the user's choice. Verify Qwen → Censored → Qwen 3.5 0.8B shows Preferred independently of loaded state.
-
-- [ ] **iOS compilation and installation:** source/native modules, project and EAS profiles are prepared; obtain Expo/Apple developer signing setup, run a macOS/cloud CocoaPods/Xcode build, fix compile/runtime findings and complete the [iPhone checklist](docs/IOS_BUILD_AND_TEST.md). The owner has an iPhone only; no signed IPA or TestFlight build was produced. Do not mark iOS feature parity complete from JS export/source checks alone.
-
-- [ ] **A54 recovery verification:** follow [six-step device checklist](docs/A54_TEST_CHECKLIST.md), especially paused/resumed downloads, reopening without duplicate tasks, X cancellation and retry/load labels. Manual Pause/Resume requires the new Dev APK; the Chat + button arrives through Metro. Production sync is authorized for 0.5.0.
-
-- [ ] **Launch UI polish (current priority):** verify the new minimal teal home/theme/icons/navigation on A54; refine Chat, Models, voice controls, Settings and App Info, including accessibility, font sizes and keyboard behavior. See [release plan](docs/PLAY_STORE_RELEASE_PLAN.md).
-- [ ] **Smooth offline/download experience:** connectivity feedback for network operations, retry/recovery, download clarity and device performance checks; local chat stays offline-capable.
-- [ ] **Small release candidate (after the 0.5.0 sync):** AAB, measured Play download size, R8/resource shrinking, unused image-picker removal and engine-variant audit. Preserve inference compatibility; no size-saving release changes applied now. See [size plan](docs/APP_SIZE_PLAN.md).
-- [ ] **Privacy/release gaps:** decide Android OS backup behavior (`allowBackup` currently true), host privacy policy, define user-controlled AI-report delivery/support destination and verify model licensing before submission.
-- [ ] **Play Store preparation:** production AAB/upload signing, native 16 KB checks, target API, privacy policy/Data safety, AI-content reporting/policy review, listing assets and applicable closed testing. No login for the first release.
-
-- [ ] **Live transcription on A54:** test Tiny/Base, one-second updates, revised words, silence/noise, long recordings, editing the draft, Stop, Cancel, chat switches, offline use and CPU/memory/latency. Compare with preserved recording mode.
-
-- [ ] **New settings/device checks:** verify text presets across chat, keyboard, drawer and dark mode; cold-reopen and reload last model; check live microphone bars when speaking and silence.
-
-- [ ] **Standalone device verification:** install the release APK over the current app, confirm chats/downloaded models survive, cold-launch in airplane mode, run chat and voice transcription with already downloaded models, and verify there is no Metro/QR prompt.
-
-- [ ] **Voice device verification:** install the new standalone APK on Samsung A54; download/select each voice model, grant/deny microphone permission, record/stop/repeat, append into an existing draft, edit during transcription, cancel, switch chats, background the app and check audio cleanup. Confirm local transcription with network disabled after models and application code are available.
+- [ ] **A54 standalone update and offline acceptance:** install current 0.5.13 over the existing production app; verify retained chats/models, App Info version, cold offline launch, local chat and voice without Metro. Check the [device checklist](docs/A54_TEST_CHECKLIST.md).
+- [ ] **A54 chat, navigation and presentation:** verify Home/Chats/Models/Settings, back navigation, existing chats, draft switching, search, selected deletion and recovery; check streaming/Stop and manual scroll, keyboard/safe areas, light/dark themes, accent colors, text sizes and accessibility.
+- [ ] **A54 models, settings and prompts:** check both generation sliders, custom values and Apply/reload behavior; load models including Qwen 3.5 2B, Gemma 3 1B and DeepSeek R1 1.5B, test multi-turn recall, Stop, storage cleanup and context limits. Verify Preferred badge independent of loaded state, saved prompt history/restore/unsaved edits and large-text action row, default/custom/blank prompt persistence and existing chat snapshots.
+- [ ] **Model RAM/device compatibility:** research exact quantizations and source-labelled estimates, distinguish download storage from runtime RAM, account for context/cache and simultaneous voice models, and measure standalone peaks on A54. Cover all catalog entries, starting with Qwen 3.5 0.8B and Whisper Tiny/Base; no minimum RAM is verified. See [research](docs/MODEL_MEMORY_RESEARCH.md).
+- [ ] **A54 downloads and recovery:** test pause/resume, offline feedback, retry, cancellation, reopening and background lifecycle without duplicate tasks, for chat and voice models. Check error and load/retry labels; local inference must remain usable offline.
+- [ ] **A54 voice acceptance:** test Whisper Tiny/Base and available voice models, permissions, speech/silence/noise, revisions, long recordings, editable drafts, Stop/Cancel, chat switching, background cleanup and offline transcription. Measure latency, CPU and memory; compare preserved recording mode. Live scheduling processes ready audio serially with 200 ms readiness retries, not a fixed one-second update promise.
+- [ ] **A54 web search acceptance:** verify routing for explicit search/no-search, definitions, officeholders and prices; compact Web control and remembered explanation, search stages, Stop/typing, grounded answers, sources/links, context usage, limits and local fallback. Include long model labels and native scrolling.
+- [ ] **A54 export and contact acceptance:** verify chat selection, ZIP destination, content/attachments, cancellation and missing-attachment reporting. Test direct contact-form validation, keyboard, long text, offline/failure draft retention and intentional submission/delivery if the user chooses; provider acknowledgement alone does not confirm inbox delivery.
+- [ ] **Android store preparation:** complete [readiness audit](docs/PLAY_STORE_READINESS.md): AI safeguards and in-app reporting/delivery, review of the published privacy policy and OS backup decision, permissions, model licenses, upload signing/AAB, target API and 16 KB checks, listing/declarations and applicable physical/closed testing. The contact form is not an AI-reporting flow.
+- [ ] **Android size and release optimization:** measure Play download size, evaluate R8/resource shrinking, unused image-picker removal and engine variants while preserving inference compatibility; see [size plan](docs/APP_SIZE_PLAN.md).
+- [ ] **iOS build, verification and delivery:** obtain Expo/Apple signing setup, compile the prepared project with CocoaPods/Xcode, fix findings and test inference, pickers, downloads, voice, permissions and memory on iPhone. Then prepare TestFlight and Apple privacy/listing/review requirements; no signed build exists. See [checklist](docs/IOS_BUILD_AND_TEST.md).
 
 ## Done
+
+- [x] **Production 0.5.13 and prompt history:** verified standalone/code 27 published on GitHub Releases and linked from the live Cloudflare website. Saved prompt versions, pinned original default and compact wrapping actions are included; physical A54 acceptance remains in To-do.
+- [x] **Website copy cleanup (2026-11-09):** remove repeated model-download badges and redundant local/offline/model-choice explanations; keep setup/privacy information where it informs a decision. Product behavior and the production APK are unchanged.
+
 
 - [x] **Website navigation/layout refinement:** homepage section navigation plus explicit Home shortcuts, inline expandable model catalog/full FAQ/downloads, compact model/detail-page spacing and corrected centered callout. Phone sample preview simplified at owner request. Static fragment checks and desktop/mobile review accompany the website update; mobile app behavior is unchanged.
 
@@ -89,7 +77,7 @@ Scope: private, on-device model downloads and chat in one mobile repository, wit
 - [x] **Voice typing:** four downloadable Whisper English models, native private WAV recording without the former 120-second cutoff, local transcription appended to the editable draft, cancel/cleanup and chat-switch protection. Live microphone bars use real audio energy and clear during silence.
 
 - [x] **Mobile foundation:** React Native, TypeScript and Expo setup in the single `phone-gpt` repository; local `models.json` catalog, with the earlier backend proposal removed.
-- [x] **Android native tooling:** local JDK/Android SDK setup, native Android project, custom development client and APK build workflow for native inference. Latest generated artifact is `PhoneGPT-v0.5.0-standalone.apk` (about 63 MB); native Android release build passed. The earlier voice APK is a Metro-dependent development build.
+- [x] **Android native tooling:** local JDK/Android SDK setup, native Android project, custom development client and APK build workflow for native inference. The 0.5.0 standalone artifact was about 63 MB; native Android release build passed. The earlier voice APK is a Metro-dependent development build.
 - [x] **Branding and navigation:** PhoneGPT app name/icon, welcome homepage, drawer navigation that slides in from the left with a fading backdrop, Models, Settings and App Info screens.
 - [x] **Responsive chat layout:** safe-area and keyboard handling, scrolling conversation, input/send controls, automatic scrolling and post-response focus handling. Device regression remains To-do.
 - [x] **Local model inference:** GGUF loading/unloading and streaming responses through `llama.rn` / llama.cpp on the phone; current conversation messages passed on each turn.
@@ -113,48 +101,16 @@ Scope: private, on-device model downloads and chat in one mobile repository, wit
 
 
 
-## Backlog
 
-- [ ] **Optional web tools (Dev pilot):** source implementation and mocked checks complete: opt-in Search, local routing, one Brave request/turn, max three sources, evidence budget, sources, Stop, separate Worker and shared quotas. Dev proxy deployed at `https://phone-gpt-search.tensor0712.workers.dev`; Brave secret configured and one live proxy query passed (HTTP 200, three sources); pending A54 checks. Production feature remains disabled; no updated search APK released. See [plan](docs/WEB_SEARCH_PLAN.md).
-
-
-- [ ] **Optional Google Drive backup/restore (planned, not implemented):** obtain provider clearance for the restricted app-content-backup use case; prototype portable encrypted archives and manual restore first, then direct account authorization/Drive uploads, immutable revision history, duplicate/conflict-safe merge, account/deletion isolation and a durable native outbox with background retry. Proposed hourly incremental batching/manual immediate runs use a durable coalescing outbox; match stable UUIDs plus revisions/hashes, treating timestamps only as hints. Explicit Link/Store/Import controls live under Settings → Backup & restore; repeated restore/retries must be idempotent. Scheduling is approximate, with eventual consistency rather than a 100% guarantee. No PhoneGPT account/chat backend required; no credentials or network integration added. See [detailed plan](docs/GOOGLE_DRIVE_BACKUP_PLAN.md), PRD and technical design.
-
-- [ ] **Optional email/password accounts (after initial release):** optional home-page sign-in to identify voluntarily registered customers, separate FastAPI service and MongoDB Dev/Prod databases with matching `users` schema validators/indexes. Basic identity only; no chats/preferences uploaded. No resources provisioned now. Google sign-in deferred further. See [authentication plan](docs/AUTHENTICATION_PLAN.md).
-
-- [ ] **Shared Dev/production storage:** signature-protected storage bridge for chats, attachments and model files; requires production and Dev native updates. User chose separate storage now and shared storage later; current builds retain independent storage.
-
-- [ ] **Image chat:** download and load matching vision projectors (`mmproj`) for compatible models, run image-plus-text inference locally and render images in messages/history. Family capability labels alone do not enable this.
-- [ ] **Image storage:** copy originals to private per-chat folders, persist references and clean up stored images when their chat is deleted.
-- [ ] **Additional document formats:** local PDF/DOCX and other format parsing, useful errors and chunking/context budgeting for larger documents; decide OCR support for scanned pages.
-- [ ] **Additional voice capabilities:** spoken responses/text-to-speech, more speech models and optional language selection.
-- [ ] **iOS voice verification:** microphone recorder/permission source exists; compile, fix native issues and test runtime/memory/audio on a real iPhone.
-- [ ] **iOS delivery:** compile/sign the prepared native project, verify inference/pickers and the background URLSession implementation, and deliver through TestFlight after account setup.
+- [x] **Optional web search shipped:** opt-in Web mode, local routing, sources and context tracking, Stop, search limits and local fallback are implemented; standalone 0.5.6 and later include it. Proxy live-query and source checks are recorded in [the plan](docs/WEB_SEARCH_PLAN.md); A54 checks remain below.
 
 - [x] Website direct contact form: owner-supplied Formspree endpoint, submission/error states and updated privacy disclosure. Native app unchanged.
-
-- Cloudflare Pages: `phone-gpt` static upload prepared; deployment/live verification status is recorded in the website README and verification notes. GitHub pushes alone do not update Cloudflare.
 
 - [x] Cloudflare Pages website published: https://phone-gpt.pages.dev/ (November 4, 2026); browser homepage/Features checks passed. Static Direct Upload; GitHub Pages remains available.
 
 Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/) is the production website. Old GitHub Pages hosting is disabled; website source repository and APK Release assets remain public by owner request.
 
-- Website automatic deployment: GitHub Actions workflow and encrypted Cloudflare secrets configured; initial deployment verification tracked in website docs.
-
 - [x] Automatic Cloudflare deployment verified: first GitHub push-triggered build/check/publish run succeeded (41999464002).
-
-- [ ] **Dev web-search UX verification:** test the search overlay and Stop/typing, “From the web” label, direct reply wording, and context usage including hidden evidence. Source and focused regression checks implemented; verify on A54 before production rollout.
-
-- [ ] **Dev routing verification:** explicit search/no-search requests, current/historical officeholders, specific prices, and local definitions; Web defaults on for new preferences while saved off persists. Source/tests updated; verify revised routing and concise grounded wording on A54.
-
-- [ ] **Verify compact Dev Web header:** toggle next to model under UUID, long model name truncation on A54, one-time explanation remembered across relaunch/toggle, and no composer disclosure. Source change and checks complete; device verification pending.
-
-- [ ] **A54 follow-up after browser checks:** verify keyboard/safe areas and scrolling during native generation at 0.8×. Running browser Settings/model-list scroll, chat header/composer and draft reuse passed; automated chat follow/pause/resume regression passed. No device connected during these checks.
-
-- [ ] **Local export A54 check:** Export icon beside Chat History; one All chats toggle (select/clear all), individual checkboxes, ZIP creation in a chosen folder, UUID text/JSON, timestamps/sources and attachments, cancellation and unavailable-attachment message. Implemented in Dev/shared source; unit and browser checks performed separately from native device verification.
-- [ ] **Shared controls A54 check:** matching model/Web surfaces and consistent action/preset buttons in light/dark themes at 0.8×. Source implemented; verify long loaded model labels.
-
-- [ ] **Export destination improvement:** consider Android Save As (`ACTION_CREATE_DOCUMENT`) in a native update so saving a ZIP to ordinary destinations such as Downloads does not request whole-folder access. Current Dev shows instructions to select/create a subfolder. OS-protected locations remain restricted.
 
 - [x] **Uncensored catalog flag off (shared source/Dev):** hide uncensored entries from model families, downloaded selector and last-loaded restoration without deleting models/chats. Production APK rollout requires a new build.
 
@@ -162,44 +118,39 @@ Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/)
 
 - [x] **Standalone 0.5.5 / code 19:** production APK built and artifact-verified against 0.5.4 signer; includes export/UI/font/uncensored-flag/token-Apply updates. Web search remains Dev-only. Install and run A54 acceptance checks next.
 
-- [ ] **Post-0.5.5 Dev check:** natural web answers without source/link narration, retained expandable sources, and manual scroll priority during streaming (small upward movement, touch, wheel/accessibility, momentum, keyboard/layout changes and queued Send frame). Parallel implementation/regression work; existing production 0.5.5 is unchanged.
-
-- [ ] **Post-0.5.5 Dev voice check:** blank/silence markers filtered; ready audio processed serially immediately after prior decode, with 200 ms insufficient-audio readiness retries and 300 ms minimum fresh audio. Source and targeted tests pass; verify real A54 mic latency/corrections, Stop/cancel, background cleanup and typed-draft preservation. Existing production APK unchanged.
-
 - [x] **Compact official-model catalog (source/Dev):** Qwen 3.5 2B, Gemma 3 1B Instruct and official DeepSeek R1 Distill Qwen 1.5B, Q4_K_M conversions, verified URLs/exact sizes and nonzero repository downloads; uncensored rollout remains off.
-- [ ] **A54 new-model acceptance:** download/load each new entry, send a greeting and multi-turn recall, check Stop, memory pressure and storage cleanup. Model metadata/URL verification does not establish native inference compatibility. Include these entries in the next standalone build after Dev testing.
 
 - [x] Context range expansion (source/Dev): fallback ceiling 32,768, explicit 10,000/20,000 presets, 2,048 default retained and known GGUF ceilings enforced. A54 memory/load checks remain pending; standalone APK unchanged.
 
 - [x] **Theme colors (shared source):** six saved accent choices in Appearance; works with light/dark mode, wrapping controls, contrast and preference tests.
+
 - [x] **Production parity source 0.5.6:** remove Dev-only web-search restriction; include latest catalog/context/voice/web-answer/scroll/export changes. Existing Worker quotas remain unchanged; uncensored models stay hidden.
-- [ ] **0.5.6 A54 acceptance:** update existing production app, confirm chats/downloads retained; cold-start offline, change/reopen theme in light/dark modes, live voice with silence, manual scroll while streaming, 10k/20k context load, export ZIP and optional web search with source/context tracking.
 
 - [x] Standalone 0.5.6/code 20 built and artifact-verified: 61 application sources match the current checkout, signer matches 0.5.5, embedded Hermes/features and native modules verified. Size ~63.2 MB. A54 installation and native runtime checks remain pending.
 
 - [x] **Theme refinement source:** remove White/Sage blue, add Violet, migrate saved retired choices and preserve dark mode. Six palettes pass contrast/persistence tests.
-- [ ] **Chats-first navigation proposal:** evaluate a main chat list with preview/search/new-chat, back from a conversation to that list, and Chats/Models/Settings navigation. Move App Info into Settings and use first-use onboarding for model setup. Discussed with owner; not implemented or included in the current APK.
 
 - [x] **Standalone 0.5.7/code 21:** six-color refinement packaged and verified against the 0.5.6 signer; 61 source inputs matched. A54 install/runtime checks pending. Chats-first navigation is still only a proposal.
 
 - [x] **Direct app contact form (source/Dev):** use website Formspree endpoint, remove inbox address/mailto, remove app message cap and limit wording, disclose submitted contact fields, prevent duplicate taps and preserve draft on failures. Mocked HTTP/timeout/long-message/UI tests pass; no live feedback email was sent.
-- [ ] **Contact A54 acceptance:** submit an intentional message, verify Formspree delivery to the configured inbox; test offline failure, retained draft and long text. Chat-list navigation remains discussion/proposal only.
 
 - [x] **Standalone 0.5.8/code 22:** direct contact form packaged; current sources, native modules, removed email, bundled endpoint and update signature verified. 164 tests passed; no live feedback submitted.
 
 - [x] **0.5.9 source/Dev navigation:** Home retained; four bottom tabs; full Chats list, first-message titles, start timestamps, last-message previews, raw-transcript search, export and Settings → App info/contact. UUIDs remain internal.
+
 - [x] **Safer chat editing:** remove row trash buttons; Edit, checkbox selection, matching Select all and confirmed Delete selected with partial-failure recovery.
+
 - [x] **Readable previews:** conservative Markdown-to-plain display helper, preserving raw stored/searchable messages and literal symbols.
+
 - [x] **Web routing and state:** 16-token YES/NO router with local fallback instead of a decision failure; explicit search requests preserved; filled Web on and neutral Web off.
-- [ ] **A54 0.5.9 acceptance:** Home/Chats/Models/Settings, back hierarchy, existing chat retention/titles, draft switching, list search, selected deletion/cancel/error, exports, keyboard/voice/stream scrolling, ambiguous Web questions and clearly visible on/off states. Production build/signature verification passed; A54 acceptance remains pending.
 
 - [x] **Standalone 0.5.9/code 23:** four-tab navigation with Home retained, first-message titles, readable previews, Edit/confirmed deletion and web fixes packaged; signer matches 0.5.8. 180 automated checks passed.
+
 - [x] **0.5.9 GitHub publication authorized:** owner requested the push on 2026-11-07. Includes navigation, editing, preview formatting, web fixes and documentation. Native A54 acceptance remains separate; the earlier 0.5.8 sync was 7d3794e.
 
 - [x] **Chat-row spacing (source):** show start time only; remove visible date label while retaining creation metadata, accessible full date and chronological ordering.
 
 - [x] **Visible editable PhoneGPT prompt (source/Dev):** one shared default for normal/web answers, no Parth fallback, brief paragraphs/bullets, direct style and optional relevant follow-up. Preserve custom settings; saving blank visibly restores default.
-- [ ] **Prompt acceptance on A54:** new default chat asking for tea steps, custom-prompt save/new chat, blank reset, reload persistence, old custom chat unchanged and web-grounded identity. Device generation has not been tested by the agent.
 
 - [x] Settings/context flow (source/Dev): preferences first, About last; context Apply stays on the page and requires explicit Load model before the next message. A54 validation pending.
 
@@ -210,6 +161,17 @@ Hosting update November 4, 2026: Cloudflare Pages (https://phone-gpt.pages.dev/)
 - [x] Hourly-search source/Dev: first-reservation one-hour window, 10 per network, retained global 50/day; validated reset/start times and clearly labelled local fallback on 429. Worker deployed with dashboard-controlled limits; standalone 0.5.11/code 25 built and verified. A54 acceptance pending.
 
 - [x] Compact inline web-search status and post-Send scroll regression fix (shared source/Dev). Automated coverage checks stale momentum versus a newer reading gesture. A54 acceptance pending.
+
 - [x] Reported >10 searches resolved by owner testing: replies after the cap showed the search-limit/reset notice and local fallback, confirming blocked web lookups rather than extra allowed searches. Cloudflare variables remain 10/hour per network and 50/day shared. No raw-IP/query history logging was enabled.
 
 - [x] Production 0.5.12/code 26 built and verified with compact search activity and Send-scroll fix. 22 test files and TypeScript pass; 64 packaged inputs match. A54 UI/scroll acceptance remains pending.
+
+## Backlog
+
+- [ ] **Optional Google Drive backup/restore:** obtain provider clearance; prototype portable encrypted archives and manual restore, then direct authorization, durable outbox/background retry, immutable revisions and conflict-safe, idempotent merge. Preserve account/deletion isolation; scheduling is approximate. See [plan](docs/GOOGLE_DRIVE_BACKUP_PLAN.md) and [execution plan](docs/GOOGLE_DRIVE_IMPLEMENTATION_PLAN.md).
+- [ ] **Optional email/password accounts after initial release:** optional identity-only sign-in with a separate FastAPI service and MongoDB Dev/Prod databases; no chat/preferences upload. Google sign-in is deferred. See [plan](docs/AUTHENTICATION_PLAN.md).
+- [ ] **Shared Dev/production storage:** explore a signature-protected bridge for chats, attachments and model files, requiring native updates to both variants. Storage is currently separate.
+- [ ] **Image chat and storage:** locally load matching vision projectors, run image-plus-text inference and render images; store originals privately per chat and clean them up on deletion.
+- [ ] **Additional document formats:** local PDF/DOCX and other parsing, errors and context-aware chunking; decide whether to support OCR for scanned documents.
+- [ ] **Additional voice capabilities:** spoken responses/text-to-speech, more speech models and optional language selection.
+- [ ] **Export destination improvement:** evaluate Android Save As (`ACTION_CREATE_DOCUMENT`) for ZIPs in ordinary destinations without whole-folder access; respect OS-protected locations.

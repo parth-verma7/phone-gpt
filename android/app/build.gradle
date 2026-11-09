@@ -4,6 +4,28 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
+// Play uploads use a dedicated key kept outside the repository. Website APKs
+// retain their historical signer so existing direct installs can still update.
+def playUploadSigning = (findProperty('phoneGptPlaySigning') ?: 'false').toBoolean()
+def uploadProperties = new Properties()
+if (playUploadSigning) {
+    def propertiesPath = System.getenv('PHONEGPT_UPLOAD_PROPERTIES')
+    if (!propertiesPath || !new File(propertiesPath).isFile()) {
+        throw new GradleException('Set PHONEGPT_UPLOAD_PROPERTIES to the private upload-signing properties file.')
+    }
+    new File(propertiesPath).withInputStream { uploadProperties.load(it) }
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { name ->
+        if (!uploadProperties.getProperty(name)) throw new GradleException('Missing upload-signing property: ' + name)
+    }
+}
+// A direct bundleRelease invocation must never silently use the debug signer.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.path == ':app:bundleRelease' } && !playUploadSigning) {
+        throw new GradleException('Play bundles require dedicated signing. Use npm run build:android:play.')
+    }
+}
+
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -92,13 +114,21 @@ android {
         applicationId 'com.phonegpt.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 27
-        versionName "0.5.13"
+        versionCode 28
+        versionName "0.5.14"
         manifestPlaceholders = [phoneGptScheme: "exp+phone-gpt"]
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
+        if (playUploadSigning) {
+            playUpload {
+                storeFile file(uploadProperties.getProperty('storeFile'))
+                storePassword uploadProperties.getProperty('storePassword')
+                keyAlias uploadProperties.getProperty('keyAlias')
+                keyPassword uploadProperties.getProperty('keyPassword')
+            }
+        }
         debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -114,9 +144,7 @@ android {
             manifestPlaceholders = [phoneGptScheme: "exp+phone-gpt-dev"]
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig playUploadSigning ? signingConfigs.playUpload : signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

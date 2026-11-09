@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Keyboard, View, type TextInput as NativeTextInput } from 'react-native';
+import { Alert, Linking, Keyboard, View, type TextInput as NativeTextInput } from 'react-native';
 import { useAppTheme } from '../theme/AppTheme';
 import { CONTACT_LIMITS, sendContactMessage, validateContactDraft, type ContactDraft, type ContactErrors } from '../services/contactForm';
 import { ScaledText as Text, ScaledTextInput as TextInput } from './ScaledText';
@@ -52,6 +52,7 @@ export function ContactForm() {
   return <SettingsCard title="Contact" icon="chat">
     <Text style={{ color: colors.secondary, fontSize: 13, lineHeight: 21 }}>Share feedback, ideas, model requests or just say hello. All fields are required.</Text>
     <Text style={{ color: colors.secondary, fontSize: 12, lineHeight: 19 }}>When you tap Send message, your name, reply email and message are sent through Formspree. Your chats are not included. An internet connection is required.</Text>
+    <ActionButton label="Privacy Policy" secondary onPress={() => { void Linking.openURL('https://phone-gpt.pages.dev/privacy/').catch(() => Alert.alert('Unable to open privacy policy', 'Open https://phone-gpt.pages.dev/privacy/ in your browser when you have internet access.')); }} />
     <View style={{ gap: 6 }}>
       <Text style={{ color: colors.text, fontSize: 14 }}>Name (required)</Text>
       <TextInput ref={nameRef} accessibilityLabel="Name, required" accessibilityHint={errors.name} value={draft.name} onChangeText={(value) => update('name', value)} maxLength={CONTACT_LIMITS.name} autoComplete="name" textContentType="name" returnKeyType="next" submitBehavior="submit" onSubmitEditing={() => emailRef.current?.focus()} keyboardAppearance={isDark ? 'dark' : 'light'} editable={!busy} style={inputStyle} />

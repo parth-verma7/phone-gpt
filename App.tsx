@@ -57,7 +57,7 @@ type Message = { id: string; role: Role; content: string; attachments?: TextAtta
 type Chat = { id: string; title: string; messages: Message[]; createdAt?: number; updatedAt?: number; systemPrompt?: string; modelId?: string; origin?: 'dev' | 'production' };
 type ModelStatus = 'checking' | 'paused' | 'not-installed' | 'downloading' | 'installed' | 'loading' | 'ready' | 'error';
 
-const APP_VERSION = 'v0.5.13';
+const APP_VERSION = 'v0.5.14';
 const MODEL_GROUPS = groupModelsByProvider(models);
 const STORAGE_KEY = '@phone-gpt/chats';
 const INFERENCE_SETTINGS_KEY = '@phone-gpt/inference-settings';

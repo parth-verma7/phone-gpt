@@ -48,3 +48,8 @@ xcuserdata/
 # Python verification cache
 __pycache__/
 *.py[cod]
+
+# Private Play upload signing and generated split archives
+*.p12
+*.apks
+*upload-signing*.properties

@@ -96,7 +96,7 @@ function formHarness(fetchImpl) {
     visit(ContactForm());
     const inputs = nodes.filter((node) => node.type === 'TextInput');
     inputs.forEach((input, index) => { input.props.ref.current = { focus() { focused.push(index); } }; });
-    return { inputs, button: nodes.find((node) => node.type === 'ActionButton'), nodes };
+    return { inputs, button: nodes.find((node) => node.type === 'ActionButton' && /^(Send message|Sending)/.test(node.props.label)), nodes };
   }
   function fill() {
     render().inputs.forEach((input, index) => input.props.onChangeText(Object.values(valid)[index]));

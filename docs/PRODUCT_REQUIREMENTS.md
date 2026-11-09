@@ -1,6 +1,6 @@
 # PhoneGPT — Product requirements
 
-Current Android delivery (2026-11-09): standalone **0.5.13/code 27** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.13.md).
+Current Android delivery (2026-11-09): standalone **0.5.14/code 28** embeds the current shared Dev features, including the prompt, Settings/context flow, search-decision summaries and clickable links below. Dev native 0.5.4 receives current JavaScript through Metro. Build/source/signature verification passed; native A54 acceptance remains pending. Earlier source-only/artifact notes below describe their original milestones; see [current release verification](RELEASE_0.5.14.md).
 
 Owner: Parth Verma. Last updated: 2026-11-09.
 Status: living product specification for the Android MVP. Implementation details belong in [Technical design](TECHNICAL_DESIGN.md); delivery status belongs in [Project tracker](../PROJECT_TRACKER.md).
@@ -308,3 +308,9 @@ Users can retain up to 50 dated prompt versions locally within the history stora
 The original bundled PhoneGPT default is a pinned, non-removable choice outside the 50 user-version slots and history text budget. Restoring it works even when history is full. Default copies from an earlier history envelope are filtered out during hydration; the bundled constant remains the source of truth.
 
 Delivery 2026-11-09: standalone 0.5.13/code 27 includes saved prompt versions and compact controls, verified against 64 application source inputs and the prior update certificate. Website release links and product copy are updated. Dev receives the same shared JavaScript; native A54 acceptance remains pending.
+
+Google Play delivery preparation (2026-11-09): a signed 0.5.13/code 27 upload bundle is built and locally verified for internal testing. Google Play is not yet a released distribution channel; Play setup, device testing and submission requirements remain pending. Existing website APK delivery remains unchanged.
+
+## Privacy policy access (0.5.14)
+
+Settings → App info & contact and the contact form provide a visible link to the PhoneGPT Privacy Policy. Users can read handling/retention/deletion details and use the contact form for privacy enquiries without exposing the inbox address publicly. The policy distinguishes local chat from web-search/contact requests, Android backups and exported copies. Data safety declaration submission and store approval remain separate.

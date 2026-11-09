@@ -392,3 +392,13 @@ The original bundled PhoneGPT default is a pinned, non-removable choice outside 
 System prompt actions use a wrapping horizontal flex row with shared ActionButton controls, keeping consistent touch targets while reducing vertical space.
 
 Delivery 2026-11-09: standalone 0.5.13/code 27 includes saved prompt versions and compact controls, verified against 64 application source inputs and the prior update certificate. Website release links and product copy are updated. Dev receives the same shared JavaScript; native A54 acceptance remains pending.
+
+## Play upload signing and AAB delivery (2026-11-09)
+
+`scripts/build-play-bundle.py` initializes a dedicated RSA-3072 PKCS12 upload key and 0600 signing properties outside the repository, refuses replacement, and builds ARM64 bundleRelease with a dedicated Gradle signing flag. Gradle reads secrets only from the private file; unflagged release-bundle generation fails rather than using debug signing. Website assembleRelease retains its historical signer. AAB 0.5.13/code 27 was validated with bundletool and its upload certificate, source parity and generated APK signature/ZIP alignment checked. Google Play App Signing and migration from direct-install certificates remain separate; no Play enrollment/upload or native device test occurred. See [handoff](PLAY_BUNDLE.md).
+
+## Privacy policy link and retention disclosure
+
+App Info and ContactForm open the fixed HTTPS /privacy/ URL through React Native Linking with a manual-URL alert on failure. Policy text documents the existing search quota expiry/alarm behavior and distinguishes it from provider retention; correspondence has no configured automatic deletion schedule and privacy/deletion requests are manual. No backend retention behavior is changed. Public policy and matching app disclosures are updated together; [Data safety preparation](PLAY_DATA_SAFETY_REVIEW.md) records current flows without submitting Console answers or claiming a complete SDK audit.
+
+Delivery: 0.5.14/code 28 AAB and standalone APK both embed the privacy actions/disclosures, with 64 source inputs matched. The AAB retains its dedicated upload certificate; standalone retains the website update certificate. Neither a Play Console declaration nor review was submitted.

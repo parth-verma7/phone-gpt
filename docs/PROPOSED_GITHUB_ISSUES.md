@@ -1,6 +1,6 @@
 # Proposed GitHub issues
 
-Drafts for review only; no GitHub issues have been created. Device acceptance refers to the current standalone release, 0.5.13/code 27. Existing automated or artifact checks do not establish physical-device results.
+Drafts for review only; no GitHub issues have been created. Device acceptance refers to the current standalone release, 0.5.14/code 28. Existing automated or artifact checks do not establish physical-device results.
 
 ## Current To-do
 
@@ -34,7 +34,7 @@ Drafts for review only; no GitHub issues have been created. Device acceptance re
 
 8. **Complete Android store preparation and size audit**  
    Close the outstanding [readiness](PLAY_STORE_READINESS.md) and [size](APP_SIZE_PLAN.md) work before submission.  
-   **Acceptance:** Address AI safeguards/reporting and delivery, review of the published privacy policy and backup decision, permissions, licensing, signing/AAB, target API and 16 KB requirements, listing/declarations and applicable device/closed testing; measure Play download size and evaluate shrinking, unused picker and engine variants without breaking inference.
+   **Acceptance:** Address AI safeguards/reporting and delivery, review of the published privacy policy and backup decision, permissions, licensing, Play App Signing enrollment/upload and split testing (local signed AAB prepared), target API and 16 KB requirements, listing/declarations and applicable device/closed testing; measure Play download size and evaluate shrinking, unused picker and engine variants without breaking inference.
 
 9. **Build, test and prepare iOS delivery**  
    Compile and sign the prepared native project and verify it on iPhone.  
